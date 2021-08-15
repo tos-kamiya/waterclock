@@ -108,7 +108,7 @@ class App:
             for x in range(WIDTH):
                 c = field_y[x]
                 if c <=0 and 0 < x < WIDTH - 1 and field_y[x - 1] in LIQUID_COLORS and field_y[x + 1] in LIQUID_COLORS:
-                    c = LIQUID_COLORS[1]  # to avoid pixel flicking around liquid sand 
+                    c = LIQUID_COLORS[1]  # to avoid pixel flicking around liquid
                 if c > 0:
                     pyxel.rect(x, y, 1, 1, c)
 
@@ -144,10 +144,10 @@ class App:
                     elif field_y1[x] in LIQUID_COLORS:
                         if field_y1[x - 1] <= 0:
                             if field_y1[x + 1] <= 0:
-                                sands = [field_y1[x], field_y[x]]
-                                random.shuffle(sands)
-                                field_y1[x - 1] = sands.pop()
-                                field_y1[x + 1] = sands.pop()
+                                drops = [field_y1[x], field_y[x]]
+                                random.shuffle(drops)
+                                field_y1[x - 1] = drops.pop()
+                                field_y1[x + 1] = drops.pop()
                                 field_y[x] = field_y1[x] = 0
                             else:
                                 if field_y[x] in LIQUID_COLORS:
@@ -167,10 +167,10 @@ class App:
             field[0][x] = LIQUID_COLORS[0]
 
 
-__doc__ = '''sandSglass, kind(s) of sand(s)glass simulator.
+__doc__ = '''Waterclock.
 
 Usage:
-  sandsglass [-f|-s] [-L|-S]
+  waterclock [-l|-s]
 
 Option:
   -l    Enlarge window.
