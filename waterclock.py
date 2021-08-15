@@ -79,6 +79,7 @@ class App:
         self.disp_digits_update_poss = []
 
         self.dropping_point = dropping_point
+        self.drop_accel = 0
 
         self.liquid_color_index = 0
 
@@ -89,6 +90,10 @@ class App:
             pyxel.quit()
         if pyxel.btnp(pyxel.KEY_C):
             self.liquid_color_index = (self.liquid_color_index + 1) % len(LIQUID_COLORS)
+        if pyxel.btnp(pyxel.KEY_UP):
+            self.drop_accel = min(4, self.drop_accel + 1)
+        elif pyxel.btnp(pyxel.KEY_DOWN):
+            self.drop_accel = max(-4, self.drop_accel - 1)
 
         if self.disp_digits_update_countdown >= 0:
             self.disp_digits_update_countdown -= 1
@@ -112,6 +117,14 @@ class App:
 
     def draw(self):
         pyxel.cls(0)
+
+        if self.drop_accel != 0:
+            if self.drop_accel < 0:
+                s = '-' * -self.drop_accel
+            else:
+                s = '+' * self.drop_accel
+            pyxel.text(0, 0, s, 1)
+
         for y in range(HEIGHT):
             field_y = self.field[y]
             for x in range(WIDTH):
@@ -172,11 +185,11 @@ class App:
                         field_y[x - 1], field_y[x] = field_y[x], 0
 
         if self.dropping_point == 'random':
-            if pyxel.frame_count % 11 == 0:
+            if pyxel.frame_count % (11 - self.drop_accel) == 0:
                 x = random.randrange(3, WIDTH - 3)
                 field[0][x] = LIQUID_COLORS[self.liquid_color_index]
         else:
-            if pyxel.frame_count % 14 == 0:
+            if pyxel.frame_count % (14 - self.drop_accel) == 0:
                 x = WIDTH - 3
                 field[0][x] = LIQUID_COLORS[self.liquid_color_index]
 
@@ -196,6 +209,7 @@ Option:
 def main():
     scale = 6
     dropping_point_random = False
+    more_drops = False
     for a in sys.argv[1:]:
         if a in ('-h', '--help', '/?'):
             print(__doc__)
