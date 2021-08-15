@@ -13,9 +13,9 @@ HEIGHT = 8 * DIGIT_DISP_ZOOM
 
 LIQUD_MOVE_INTERVAL = 5
 
-LIQUID_COLORS = [12, 5]
+LIQUID_COLORS = [5, 12]
 
-WALL_COLOR = 8
+WALL_COLOR = 13
 
 DIGIT_PATTERN_STRS = [
     "111\n101\n101\n101\n111\n",
@@ -25,25 +25,26 @@ DIGIT_PATTERN_STRS = [
     "101\n101\n111\n001\n001\n",
     "111\n100\n111\n001\n111\n",
     "111\n100\n111\n101\n111\n",
-    "111\n001\n001\n001\n001\n",
+    "111\n101\n001\n001\n001\n",
     "111\n101\n111\n101\n111\n",
     "111\n101\n111\n001\n111\n",
 ]
 
 
-def clear_digit(field, pos):
+def remove_bottom_digit(field, pos):
+    for y in range(7 * DIGIT_DISP_ZOOM, (7 + 1) * DIGIT_DISP_ZOOM):
+        field_y = field[y]
+        for x in range((1 + pos * 4) * DIGIT_DISP_ZOOM, (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM):
+            field_y[x] = 0
+
+
+def put_digit(field, pos, digit):
     for y in range(8 * DIGIT_DISP_ZOOM):
         field_y = field[y]
         for x in range((1 + pos * 4) * DIGIT_DISP_ZOOM, (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM):
             if field_y[x] == WALL_COLOR:
                 field_y[x] = 0
 
-
-def put_digit(field, pos, digit):
-    for y in range(2 * DIGIT_DISP_ZOOM):
-        field_y = field[y]
-        for x in range((1 + pos * 4) * DIGIT_DISP_ZOOM, (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM):
-            field_y[x] = 0
     for y in range(7 * DIGIT_DISP_ZOOM, (7 + 1) * DIGIT_DISP_ZOOM):
         field_y = field[y]
         for x in range((1 + pos * 4) * DIGIT_DISP_ZOOM, (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM):
@@ -70,7 +71,6 @@ class App:
         h, m = nt.hour, nt.minute
         self.disp_digits = [h // 10, h % 10, m // 10, m % 10]
         for p in range(4):
-            clear_digit(self.field, p)
             put_digit(self.field, p, self.disp_digits[p])
         self.disp_digits_update_countdown = -1
         self.disp_digits_update_poss = []
@@ -91,11 +91,11 @@ class App:
         h, m = nt.hour, nt.minute
         ds = [h // 10, h % 10, m // 10, m % 10]
         if ds != self.disp_digits:
-            self.disp_digits_update_countdown = 100
+            self.disp_digits_update_countdown = 40
             self.disp_digits_update_poss = []
             for p in range(4):
                 if ds[p] != self.disp_digits[p]:
-                    clear_digit(self.field, p)
+                    remove_bottom_digit(self.field, p)
                     self.disp_digits_update_poss.append(p)
             self.disp_digits = ds
 
@@ -108,7 +108,7 @@ class App:
             for x in range(WIDTH):
                 c = field_y[x]
                 if c <=0 and 0 < x < WIDTH - 1 and field_y[x - 1] in LIQUID_COLORS and field_y[x + 1] in LIQUID_COLORS:
-                    c = LIQUID_COLORS[1]  # to avoid pixel flicking around liquid
+                    c = LIQUID_COLORS[0]  # to avoid pixel flicking around liquid
                 if c > 0:
                     pyxel.rect(x, y, 1, 1, c)
 
