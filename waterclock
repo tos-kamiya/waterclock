@@ -21,10 +21,11 @@ DIGIT_DISP_ZOOM = 3
 WIDTH = (1 + 4 * 4) * DIGIT_DISP_ZOOM
 HEIGHT = 8 * DIGIT_DISP_ZOOM
 
+SINKHOLE_OPENING_PERIOD = 50
+
 LIQUID_MOVE_INTERVAL = 4
 LIQUID_SEP_INTERVAL = 120
-
-SINKHOLE_OPENING_PERIOD = 45
+LIQUID_DROP_SIZE = 2
 
 LIQUID_COLORS = [5, 3, 8, 9]
 
@@ -111,20 +112,21 @@ class App:
     def __init__(self, dropping_point=None):
         self.field = [([0] * WIDTH) for y in range(2 * DIGIT_DISP_ZOOM)] + \
             [([WALL_COLOR] * WIDTH) for y in range(HEIGHT - 2 * DIGIT_DISP_ZOOM)] + [[0] * WIDTH]
-        if dropping_point == 'both':
-            for x in range(3):
-                self.field[7 * DIGIT_DISP_ZOOM - 1][x] = 0
 
         nt = datetime.datetime.now()
         h, m = nt.hour, nt.minute
         self.disp_digits = [h // 10, h % 10, m // 10, m % 10]
         for p in range(4):
             put_digit(self.field, p, self.disp_digits[p])
+        if dropping_point == 'both':
+            for x in range(3 + 3*3):
+                self.field[7 * DIGIT_DISP_ZOOM - 1][x] = 0
         self.disp_digits_update_countdown = -1
         self.disp_digits_update_poss = []
 
         self.dropping_point = dropping_point
         self.drop_accel = 0
+        self.drop_x = 0
         self.drop_move_picks = []
         self.drop_sep_picks = []
 
@@ -152,6 +154,11 @@ class App:
             if self.disp_digits_update_countdown == 0:
                 for p in self.disp_digits_update_poss:
                     put_digit(self.field, p, self.disp_digits[p])
+                if self.dropping_point == 'both':
+                    field_y = self.field[7 * DIGIT_DISP_ZOOM - 1]
+                    for x in range(3 + 3*3):
+                        if field_y[x] == WALL_COLOR:
+                            field_y[x] = 0
 
         if not self.drop_move_picks:
             picks = []
@@ -221,19 +228,21 @@ class App:
                         liquid_separate(field, x, y, ds_prefer_x)
 
         if self.dropping_point in ['random', 'patchwork']:
-            if self.frame_count % (6 - self.drop_accel) == 0:
-                if self.dropping_point == 'patchwork':
-                    self.liquid_color_index = (self.liquid_color_index + 1) % len(LIQUID_COLORS)
-                x = random.randrange(3, WIDTH - 3)
-                field[0][x] = LIQUID_COLORS[self.liquid_color_index]
+            t = self.frame_count % (LIQUID_DROP_SIZE * (6 - self.drop_accel))
+            if t < LIQUID_DROP_SIZE:
+                if t == 0:
+                    if self.dropping_point == 'patchwork':
+                        self.liquid_color_index = (self.liquid_color_index + 1) % len(LIQUID_COLORS)
+                    self.drop_x = random.randrange(3, WIDTH - 3)
+                field[0][self.drop_x] = LIQUID_COLORS[self.liquid_color_index]
         elif self.dropping_point == 'both':
-            if self.frame_count % (6 - self.drop_accel) == 0:
+            if self.frame_count % (LIQUID_DROP_SIZE * (6 - self.drop_accel)) < LIQUID_DROP_SIZE:
                 x = 4 * 4 * DIGIT_DISP_ZOOM - 5
                 field[0][x] = LIQUID_COLORS[self.liquid_color_index]
                 x = 1 * 4 * DIGIT_DISP_ZOOM - 5
                 field[0][x] = LIQUID_COLORS[(self.liquid_color_index + 1) % len(LIQUID_COLORS)]
         else:
-            if self.frame_count % (11 - self.drop_accel) == 0:
+            if self.frame_count % (LIQUID_DROP_SIZE * (10 - self.drop_accel)) < LIQUID_DROP_SIZE:
                 x = 4 * 4 * DIGIT_DISP_ZOOM - 5
                 field[0][x] = LIQUID_COLORS[self.liquid_color_index]
 
@@ -294,8 +303,8 @@ if curses is not None:
         def main(self, sc):
             self.stdscr = sc
             height, width = sc.getmaxyx()
-            if height < HEIGHT or width < WIDTH * 2:
-                sys.exit('Error: required screen size is %d x %d, but actual was %d x %d.' % (WIDTH * 2, HEIGHT, width, height))
+            if height < HEIGHT + 1 or width < WIDTH * 2:
+                sys.exit('Error: required screen size is %d x %d, but actual was %d x %d.' % (WIDTH * 2, HEIGHT + 1, width, height))
 
             curses.start_color()
             curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
