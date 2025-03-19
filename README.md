@@ -1,8 +1,23 @@
 Waterclock
 ==========
 
-こういうもの。
+デジタルの水時計。
 
-![](waterclock-screenshot.png)
+![](waterclock-screenshot2.png)
 
-Pyxelを利用して実装しました。
+時計の数字の形の入れ物に水滴が落下・移動する様子がシミュレーションされます。  
+
+## インストール
+
+```sh
+pipx install git+https://github.com/tos-kamiya/waterclock
+```
+
+または、
+
+```sh
+git clone https://github.com/tos-kamiya/waterclock
+cd waterclock
+pip install .
+```
+
