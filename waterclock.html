@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Water Clock - Patchwork Mode</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    canvas {
+      background: #000;
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <script>
+    // --- 定数 ---
+    const DIGIT_DISP_ZOOM = 3;
+    const WIDTH = (1 + 4 * 4) * DIGIT_DISP_ZOOM; // 51
+    const HEIGHT = 7 * DIGIT_DISP_ZOOM;            // 21
+    const WALL_COLOR = 13;
+    const SINKHOLE_OPENING_PERIOD = 30;
+    const LIQUID_MOVE_INTERVAL = 4;
+    const LIQUID_SEP_INTERVAL = 120;
+    const LIQUID_DROP_SIZE = 2;
+    const LIQUID_DROP_INTERVAL = 14;
+    
+    const LIQUID_COLOR_POPULATION = { 1: 150, 3: 850, 4: 1 };
+    const LIQUID_COLORS = [1, 3, 4];
+    let LIQUID_COLOR_QUEUE = [];
+    for (const c in LIQUID_COLOR_POPULATION) {
+      const pop = LIQUID_COLOR_POPULATION[c];
+      for (let i = 0; i < pop; i++) {
+        LIQUID_COLOR_QUEUE.push(parseInt(c));
+      }
+    }
+    LIQUID_COLOR_QUEUE.sort(() => Math.random() - 0.5);
+    
+    // PALETTE（16進カラー→CSSカラー）
+    const PALETTE = {
+      0: "#C0C0C0",  // 背景
+      1: "#84C2DA",  // 水1
+      2: "#81B8CF",  // 水2
+      3: "#4CA4C4",  // 水3
+      4: "#F38C79",  // 水4
+      13: "#202020"  // 壁
+    };
+    
+    // 数字パターン（0～9）
+    const DIGIT_PATTERN_STRS = [
+      "111\n101\n101\n101\n111\n",  // 0
+      "001\n001\n001\n001\n001\n",  // 1
+      "111\n001\n111\n100\n111\n",  // 2
+      "111\n001\n111\n001\n111\n",  // 3
+      "101\n101\n111\n001\n001\n",  // 4
+      "111\n100\n111\n001\n111\n",  // 5
+      "111\n100\n111\n101\n111\n",  // 6
+      "111\n101\n001\n001\n001\n",  // 7
+      "111\n101\n111\n101\n111\n",  // 8
+      "111\n101\n111\n001\n111\n"   // 9
+    ];
+    
+    // --- ユーティリティ関数 ---
+    function createField() {
+      const field = [];
+      // 上部：DIGIT_DISP_ZOOM 行は背景 (0)
+      for (let y = 0; y < 1 * DIGIT_DISP_ZOOM; y++) {
+        field.push(new Array(WIDTH).fill(0));
+      }
+      // 中間部：DIGIT_DISP_ZOOM ～ HEIGHT 行は壁色
+      for (let y = DIGIT_DISP_ZOOM; y < HEIGHT; y++) {
+        field.push(new Array(WIDTH).fill(WALL_COLOR));
+      }
+      // 一番下の行
+      field.push(new Array(WIDTH).fill(0));
+      return field;
+    }
+    
+    function putSinkhole(field, pos) {
+      const xIndices = [ (1 + pos * 4 + 0) * DIGIT_DISP_ZOOM + 1,
+                         (1 + pos * 4 + 2) * DIGIT_DISP_ZOOM + 1 ];
+      for (const x of xIndices) {
+        for (let y = 6 * DIGIT_DISP_ZOOM; y < 7 * DIGIT_DISP_ZOOM; y++) {
+          if (field[y][x] === WALL_COLOR) {
+            field[y][x] = 0;
+          }
+        }
+      }
+    }
+    
+    function putDigit(field, pos, digit) {
+      // 数字描画部分の壁をクリア
+      for (let y = 0; y < 6 * DIGIT_DISP_ZOOM; y++) {
+        for (let x = (1 + pos * 4) * DIGIT_DISP_ZOOM; x < (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM; x++) {
+          if (field[y][x] === WALL_COLOR) {
+            field[y][x] = 0;
+          }
+        }
+      }
+      // 下部の行は壁で上書き
+      for (let y = 6 * DIGIT_DISP_ZOOM; y < 7 * DIGIT_DISP_ZOOM; y++) {
+        for (let x = (1 + pos * 4) * DIGIT_DISP_ZOOM; x < (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM; x++) {
+          field[y][x] = WALL_COLOR;
+        }
+      }
+      // 数字パターンを反映：パターン内で "0" の部分に壁色をセット
+      const dp = DIGIT_PATTERN_STRS[digit].trim().split("\n");
+      for (let dy = 0; dy < 5; dy++) {
+        for (let dx = 0; dx < 3; dx++) {
+          if (dp[dy][dx] === "0") {
+            for (let y = (1 + dy) * DIGIT_DISP_ZOOM; y < (1 + dy + 1) * DIGIT_DISP_ZOOM; y++) {
+              for (let x = (1 + pos * 4 + dx) * DIGIT_DISP_ZOOM; x < (1 + pos * 4 + dx + 1) * DIGIT_DISP_ZOOM; x++) {
+                field[y][x] = WALL_COLOR;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    function liquidSeparate(field, x, y, preferX) {
+      const c = field[y][x];
+      if (!LIQUID_COLORS.includes(c)) return;
+      let wx = 0, wy = 0;
+      for (let dy = -2; dy <= 2; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= field.length) continue;
+        for (let dx = -2; dx <= 2; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= field[0].length) continue;
+          const dist = Math.abs(dx) + Math.abs(dy);
+          if (dist < 1 || dist > 3) continue;
+          if (field[yy][xx] === c) {
+            wx += dx;
+            wy += dy;
+          }
+        }
+      }
+      wx = Math.max(-1, Math.min(1, wx));
+      wy = Math.max(-1, Math.min(1, wy));
+      if (preferX) {
+        if (wx !== 0 && LIQUID_COLORS.includes(field[y][x + wx])) {
+          [field[y][x], field[y][x + wx]] = [field[y][x + wx], field[y][x]];
+        } else if (wy !== 0 && LIQUID_COLORS.includes(field[y + wy][x])) {
+          [field[y][x], field[y + wy][x]] = [field[y + wy][x], field[y][x]];
+        }
+      } else {
+        if (wy !== 0 && LIQUID_COLORS.includes(field[y + wy][x])) {
+          [field[y][x], field[y + wy][x]] = [field[y + wy][x], field[y][x]];
+        } else if (wx !== 0 && LIQUID_COLORS.includes(field[y][x + wx])) {
+          [field[y][x], field[y][x + wx]] = [field[y][x + wx], field[y][x]];
+        }
+      }
+    }
+    
+    // --- アプリ本体 ---
+    class App {
+      constructor() {
+        this.field = createField();
+        this.prevFields = [];  // 過去フレーム（最大2枚）
+    
+        const now = new Date();
+        const h = now.getHours();
+        const m = now.getMinutes();
+        this.dispDigits = [Math.floor(h/10), h % 10, Math.floor(m/10), m % 10];
+        for (let p = 0; p < 4; p++) {
+          putDigit(this.field, p, this.dispDigits[p]);
+        }
+        this.dispDigitsUpdateCountdown = -1;
+        this.dispDigitsUpdatePoss = [];
+        this.dropAccel = 0;
+        this.dropX = 0;
+        this.dropMovePicks = [];
+        this.dropSepPicks = [];
+        this.liquidColorIndex = 0;
+        this.frameCount = 0;
+    
+        this.startTime = new Date();
+    
+        this.canvas = document.getElementById("canvas");
+        this.ctx = this.canvas.getContext("2d");
+        // メインキャンバスでもスムージングを無効化
+        this.ctx.imageSmoothingEnabled = false;
+        this.updateCanvasSize();
+        window.addEventListener("resize", () => this.updateCanvasSize());
+      }
+    
+      updateCanvasSize() {
+        this.window_width = window.innerWidth;
+        this.window_height = window.innerHeight;
+        this.canvas.width = this.window_width;
+        this.canvas.height = this.window_height;
+      }
+    
+      fieldUpdate(now = new Date()) {
+        const h = now.getHours();
+        const m = now.getMinutes();
+        const ds = [Math.floor(h/10), h % 10, Math.floor(m/10), m % 10];
+        if (ds.toString() !== this.dispDigits.toString()) {
+          this.dispDigitsUpdateCountdown = SINKHOLE_OPENING_PERIOD;
+          this.dispDigitsUpdatePoss = [];
+          for (let p = 0; p < 4; p++) {
+            if (ds[p] !== this.dispDigits[p]) {
+              putSinkhole(this.field, p);
+              this.dispDigitsUpdatePoss.push(p);
+            }
+          }
+          this.dispDigits = ds;
+        }
+        if (this.dispDigitsUpdateCountdown >= 0) {
+          this.dispDigitsUpdateCountdown--;
+          if (this.dispDigitsUpdateCountdown === 0) {
+            for (const p of this.dispDigitsUpdatePoss) {
+              putDigit(this.field, p, this.dispDigits[p]);
+            }
+          }
+        }
+    
+        // 画面の端の水滴除去
+        for (let y = 0; y < HEIGHT; y++) {
+          if (LIQUID_COLORS.includes(this.field[y][0])) {
+            this.field[y][0] = 0;
+          }
+          if (LIQUID_COLORS.includes(this.field[y][WIDTH - 1])) {
+            this.field[y][WIDTH - 1] = 0;
+          }
+        }
+        for (let x = 0; x < WIDTH; x++) {
+          if (this.field[HEIGHT][x] === 0 && LIQUID_COLORS.includes(this.field[HEIGHT - 1][x])) {
+            this.field[HEIGHT - 1][x] = 0;
+          }
+        }
+    
+        // タイミングデータ生成
+        if (this.dropMovePicks.length === 0) {
+          let picks = [];
+          for (let i = 0; i < LIQUID_MOVE_INTERVAL; i++) {
+            for (let j = 0; j < 5; j++) {
+              picks.push(i);
+            }
+          }
+          picks.sort(() => Math.random() - 0.5);
+          this.dropMovePicks = picks;
+        }
+        if (this.dropSepPicks.length === 0) {
+          let picks = [];
+          for (let i = 0; i < LIQUID_SEP_INTERVAL; i++) {
+            for (let j = 0; j < 5; j++) {
+              picks.push(i);
+            }
+          }
+          picks.sort(() => Math.random() - 0.5);
+          this.dropSepPicks = picks;
+        }
+    
+        const dpMove = this.dropMovePicks.pop() || 0;
+        const dsPick = this.dropSepPicks.pop() || 0;
+        const dsPreferX = Math.random() < 0.5;
+    
+        // 水滴移動
+        for (let y = HEIGHT; y >= 0; y--) {
+          for (let x = 1; x < WIDTH - 1; x++) {
+            if (LIQUID_COLORS.includes(this.field[y][x])) {
+              if (y + 1 < this.field.length && this.field[y+1][x] <= 0) {
+                this.field[y+1][x] = this.field[y][x];
+                this.field[y][x] = 0;
+              } else if (y + 1 < this.field.length && LIQUID_COLORS.includes(this.field[y+1][x])) {
+                if (dsPreferX) {
+                  if (x + 1 < WIDTH && this.field[y+1][x+1] <= 0) {
+                    this.field[y+1][x+1] = this.field[y][x];
+                    this.field[y][x] = 0;
+                  }
+                } else {
+                  if (x - 1 >= 0 && this.field[y+1][x-1] <= 0) {
+                    this.field[y+1][x-1] = this.field[y][x];
+                    this.field[y][x] = 0;
+                  }
+                }
+              }
+            }
+            let c = this.field[y][x];
+            if (LIQUID_COLORS.includes(c)) {
+              if ((y + x) % LIQUID_MOVE_INTERVAL === dpMove) {
+                if (this.field[y][x-1] > 0 && this.field[y][x+1] <= 0) {
+                  this.field[y][x+1] = c;
+                  this.field[y][x] = 0;
+                } else if (this.field[y][x+1] > 0 && this.field[y][x-1] <= 0) {
+                  this.field[y][x-1] = c;
+                  this.field[y][x] = 0;
+                }
+              } else if ((y + x) % LIQUID_SEP_INTERVAL === dsPick) {
+                liquidSeparate(this.field, x, y, dsPreferX);
+              }
+            }
+          }
+        }
+    
+        // 水滴生成
+        const t = this.frameCount % (LIQUID_DROP_SIZE * (LIQUID_DROP_INTERVAL - this.dropAccel));
+        if (t < LIQUID_DROP_SIZE) {
+          if (t === 0) {
+            this.dropX = WIDTH - 1 - Math.floor(Math.random() * (DIGIT_DISP_ZOOM * 4)) - 1;
+            this.liquidColorIndex = (this.liquidColorIndex + 1) % LIQUID_COLOR_QUEUE.length;
+          }
+          this.field[0][this.dropX] = LIQUID_COLOR_QUEUE[this.liquidColorIndex];
+        }
+      }
+    
+      update(now) {
+        // 前フレームのフィールドを保存（最新2枚）
+        const copyField = this.field.map(row => row.slice());
+        this.prevFields.push(copyField);
+        if (this.prevFields.length > 2) {
+          this.prevFields.shift();
+        }
+        this.frameCount++;
+        this.fieldUpdate(now);
+      }
+    
+      draw() {
+        // オフスクリーンキャンバス作成
+        const offCanvas = document.createElement("canvas");
+        offCanvas.width = WIDTH;
+        offCanvas.height = HEIGHT;
+        const offCtx = offCanvas.getContext("2d");
+        offCtx.imageSmoothingEnabled = false;  // 無効化
+        offCtx.fillStyle = PALETTE[0];
+        offCtx.fillRect(0, 0, WIDTH, HEIGHT);
+    
+        // セル毎描画
+        for (let y = 0; y < HEIGHT; y++) {
+          for (let x = 0; x < WIDTH; x++) {
+            let c = this.field[y][x];
+            if (c === 0 && this.prevFields.length > 0) {
+              for (let i = this.prevFields.length - 1; i >= 0; i--) {
+                if (LIQUID_COLORS.includes(this.prevFields[i][y][x])) {
+                  c = this.prevFields[i][y][x];
+                  break;
+                }
+              }
+            }
+            if (c > 0) {
+              offCtx.fillStyle = PALETTE[c] || "#FFFFFF";
+              offCtx.fillRect(x, y, 1, 1);
+            }
+          }
+        }
+    
+        // メインキャンバスへ letterbox 表示（nearest-neighbor scaling）
+        this.ctx.imageSmoothingEnabled = false;  // 無効化
+        const finalScale = Math.min(this.window_width / WIDTH, this.window_height / HEIGHT);
+        const destWidth = Math.floor(WIDTH * finalScale);
+        const destHeight = Math.floor(HEIGHT * finalScale);
+        this.ctx.fillStyle = "#000000";
+        this.ctx.fillRect(0, 0, this.window_width, this.window_height);
+        const offsetX = Math.floor((this.window_width - destWidth) / 2);
+        const offsetY = Math.floor((this.window_height - destHeight) / 2);
+        this.ctx.drawImage(offCanvas, 0, 0, WIDTH, HEIGHT, offsetX, offsetY, destWidth, destHeight);
+      }
+    }
+    
+    // --- メインループ ---
+    const app = new App();
+    const fps = 20;
+    const interval = 1000 / fps;
+    let then = Date.now();
+
+    function loop() {
+      requestAnimationFrame(loop);
+      const now = Date.now();
+      const delta = now - then;
+      if (delta > interval) {
+        then = now - (delta % interval);
+        app.update(/* simulation time */);
+        app.draw();
+      }
+    }
+    loop();
+  </script>
+</body>
+</html>
