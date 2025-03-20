@@ -1,19 +1,17 @@
+#!/usr/bin/env python3
 import argparse
 from datetime import datetime, timedelta
 import random
 import sys
+import time
 
 import pygame
-
-try:
-    from .__about__ import __version__
-except ImportError:
-    __version__ = "(unknown)"
+import curses
 
 # --- 定数 ---
 DIGIT_DISP_ZOOM = 3
 WIDTH = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
-HEIGHT = 7 * DIGIT_DISP_ZOOM  # 21
+HEIGHT = 7 * DIGIT_DISP_ZOOM            # 21
 WALL_COLOR = 16
 SINKHOLE_OPENING_PERIOD = 30
 LIQUID_MOVE_INTERVAL = 4
@@ -28,14 +26,14 @@ for c, p in LIQUID_COLOR_POPULATION.items():
     LIQUID_COLOR_QUEUE.extend([c] * p)
 random.shuffle(LIQUID_COLOR_QUEUE)
 
-# パレット（16進カラー→RGB）
+# PALETTE（pygame 用: RGB）
 PALETTE = {
     0: (0xC0, 0xC0, 0xC0),  # 背景
     8: (0x84, 0xC2, 0xDA),  # 水1
     9: (0x81, 0xB8, 0xCF),  # 水2
     10: (0x4C, 0xA4, 0xC4),  # 水3
     11: (0xF3, 0x8C, 0x79),  # 水4
-    16: (0x20, 0x20, 0x20),  # 壁
+    16: (0x20, 0x20, 0x20)   # 壁
 }
 
 # 数字パターン（0～9）
@@ -49,31 +47,34 @@ DIGIT_PATTERN_STRS = [
     "111\n100\n111\n101\n111\n",  # 6
     "111\n101\n001\n001\n001\n",  # 7
     "111\n101\n111\n101\n111\n",  # 8
-    "111\n101\n111\n001\n111\n",  # 9
+    "111\n101\n111\n001\n111\n"   # 9
 ]
 
 
 # --- ユーティリティ関数 ---
 def create_field():
-    # 上部：DIGIT_DISP_ZOOM行は背景（0）
-    field = [[0] * WIDTH for _ in range(1 * DIGIT_DISP_ZOOM)]
-    # 中間部：DIGIT_DISP_ZOOM～HEIGHT行は壁色
-    field += [[WALL_COLOR] * WIDTH for _ in range(DIGIT_DISP_ZOOM, HEIGHT)]
-    # 一番下の行
+    field = []
+    # 上部：DIGIT_DISP_ZOOM 行は背景 (0)
+    for y in range(1 * DIGIT_DISP_ZOOM):
+        field.append([0] * WIDTH)
+    # 中間部：DIGIT_DISP_ZOOM～HEIGHT 行は壁色
+    for y in range(DIGIT_DISP_ZOOM, HEIGHT):
+        field.append([WALL_COLOR] * WIDTH)
+    # 一番下の行：背景 (0)
     field.append([0] * WIDTH)
-
+    
     # 時と分の間に「:」を描画する
     x = 2 * 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
     y = 2 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
     field[y][x] = 0
     y = 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
     field[y][x] = 0
-
     return field
 
 
 def put_sinkhole(field, pos):
-    x_indices = [(1 + pos * 4 + i) * DIGIT_DISP_ZOOM + 1 for i in [0, 2]]
+    x_indices = [ (1 + pos * 4 + 0) * DIGIT_DISP_ZOOM + 1,
+                  (1 + pos * 4 + 2) * DIGIT_DISP_ZOOM + 1 ]
     for x in x_indices:
         for y in range(6 * DIGIT_DISP_ZOOM, 7 * DIGIT_DISP_ZOOM):
             if field[y][x] == WALL_COLOR:
@@ -104,7 +105,8 @@ def liquid_separate(field, x, y, prefer_x):
     c = field[y][x]
     if c not in LIQUID_COLORS:
         return
-    wx, wy = 0, 0
+    wx = 0
+    wy = 0
     for dy in range(-2, 3):
         yy = y + dy
         if yy < 0 or yy >= len(field):
@@ -133,12 +135,11 @@ def liquid_separate(field, x, y, prefer_x):
             field[y][x], field[y][x + wx] = field[y][x + wx], field[y][x]
 
 
-# --- シミュレーション本体 ---
-class App:
+# --- 基本シミュレーションクラス ---
+class BaseApp:
     def __init__(self):
         self.field = create_field()
         self.prev_fields = []
-
         now = datetime.now()
         h = now.hour
         m = now.minute
@@ -154,48 +155,11 @@ class App:
         self.liquidColorIndex = 0
         self.frameCount = 0
 
-        # 初期ウィンドウサイズ（リサイズ可能フラグ付き）
-        self.window_width = WIDTH * 10
-        self.window_height = HEIGHT * 10
-        self.screen = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
-        pygame.display.set_caption("Water Clock v" + __version__)
-
-    def update_canvas_size(self):
-        width, height = self.screen.get_rect().size
-        self.window_width = width
-        self.window_height = height
-
-    def handle_mouse(self, pos, button):
-        """
-        マウス座標 (pos) を内部のフィールド座標に変換し、
-        左クリックなら WALL_COLOR、右クリックなら背景(0)に設定する。
-        """
-        final_scale = min(self.window_width / WIDTH, self.window_height / HEIGHT)
-        dest_width = int(WIDTH * final_scale)
-        dest_height = int(HEIGHT * final_scale)
-        offset_x = (self.window_width - dest_width) // 2
-        offset_y = (self.window_height - dest_height) // 2
-
-        mx, my = pos
-        if mx < offset_x or mx >= offset_x + dest_width or my < offset_y or my >= offset_y + dest_height:
-            return
-        field_x = int((mx - offset_x) / final_scale)
-        field_y = int((my - offset_y) / final_scale)
-        if field_x < 0 or field_x >= WIDTH or field_y < 0 or field_y >= HEIGHT:
-            return
-
-        if button == 1:  # 左クリック：壁に変更
-            self.field[field_y][field_x] = WALL_COLOR
-        elif button == 3:  # 右クリック：背景に変更
-            self.field[field_y][field_x] = 0
-
     def field_update(self, now=None):
         if now is None:
             now = datetime.now()
         h = now.hour
         m = now.minute
-
-        # 文字盤を更新
         ds = [h // 10, h % 10, m // 10, m % 10]
         if ds != self.dispDigits:
             self.dispDigitsUpdateCountdown = SINKHOLE_OPENING_PERIOD
@@ -210,8 +174,7 @@ class App:
             if self.dispDigitsUpdateCountdown == 0:
                 for p in self.dispDigitsUpdatePoss:
                     put_digit(self.field, p, self.dispDigits[p])
-
-        # 画面の端に来た水滴は除去する
+        # 画面端の水滴除去
         for y in range(HEIGHT):
             if self.field[y][0] in LIQUID_COLORS:
                 self.field[y][0] = 0
@@ -220,8 +183,7 @@ class App:
         for x in range(WIDTH):
             if self.field[HEIGHT][x] == 0 and self.field[HEIGHT - 1][x] in LIQUID_COLORS:
                 self.field[HEIGHT - 1][x] = 0
-
-        # 水滴移動のタイミング調整用のデータ生成
+        # 水滴移動のタイミング調整
         if not self.dropMovePicks:
             picks = []
             for i in range(LIQUID_MOVE_INTERVAL):
@@ -236,12 +198,10 @@ class App:
                     picks.append(i)
             random.shuffle(picks)
             self.dropSepPicks = picks
-
         dpMove = self.dropMovePicks.pop() if self.dropMovePicks else 0
         dsPick = self.dropSepPicks.pop() if self.dropSepPicks else 0
         dsPreferX = random.randint(0, 1) == 0
-
-        # 水滴の移動（左右移動、落下、分離）
+        # 水滴移動
         for y in range(HEIGHT, -1, -1):
             for x in range(1, WIDTH - 1):
                 if self.field[y][x] in LIQUID_COLORS:
@@ -268,8 +228,7 @@ class App:
                             self.field[y][x] = 0
                     elif (y + x) % LIQUID_SEP_INTERVAL == dsPick:
                         liquid_separate(self.field, x, y, dsPreferX)
-
-        # 水滴の生成
+        # 水滴生成
         t = self.frameCount % (LIQUID_DROP_SIZE * (LIQUID_DROP_INTERVAL - self.dropAccel))
         if t < LIQUID_DROP_SIZE:
             if t == 0:
@@ -282,21 +241,48 @@ class App:
         if len(self.prev_fields) > 2:
             self.prev_fields.pop(0)
         self.frameCount += 1
-        self.field_update(now=now)
+        self.field_update(now)
+
+
+# --- pygame版クラス ---
+class AppPygame(BaseApp):
+    def __init__(self):
+        super().__init__()
+        pygame.init()
+        self.window_width = WIDTH * 10
+        self.window_height = HEIGHT * 10
+        self.screen = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
+        pygame.display.set_caption("Water Clock")
+
+    def update_canvas_size(self):
+        width, height = self.screen.get_rect().size
+        self.window_width = width
+        self.window_height = height
+
+    def handle_mouse(self, pos, button):
+        final_scale = min(self.window_width / WIDTH, self.window_height / HEIGHT)
+        dest_width = int(WIDTH * final_scale)
+        dest_height = int(HEIGHT * final_scale)
+        offset_x = (self.window_width - dest_width) // 2
+        offset_y = (self.window_height - dest_height) // 2
+        mx, my = pos
+        if mx < offset_x or mx >= offset_x + dest_width or my < offset_y or my >= offset_y + dest_height:
+            return
+        field_x = int((mx - offset_x) / final_scale)
+        field_y = int((my - offset_y) / final_scale)
+        if field_x < 0 or field_x >= WIDTH or field_y < 0 or field_y >= HEIGHT:
+            return
+        if button == 1:  # 左クリック: 壁に
+            self.field[field_y][field_x] = WALL_COLOR
+        elif button == 3:  # 右クリック: 背景に
+            self.field[field_y][field_x] = 0
 
     def draw(self):
-        # 内部サーフェス（論理解像度 WIDTH×HEIGHT）に1セル1ピクセルで描画
         clock_surface = pygame.Surface((WIDTH, HEIGHT))
         clock_surface.fill(PALETTE[0])
-        if self.dropAccel != 0:
-            font = pygame.font.SysFont(None, 16)
-            s = ("-" * (-self.dropAccel)) if self.dropAccel < 0 else ("+" * self.dropAccel)
-            text_surface = font.render(s, True, (255, 255, 255))
-            clock_surface.blit(text_surface, (0, 16))
         for y in range(HEIGHT):
             for x in range(WIDTH):
                 c = self.field[y][x]
-                # もし現在が背景（0）であれば、前フレームの同じ位置が水滴ならその水滴色を使用
                 if c == 0:
                     for f in self.prev_fields[::-1]:
                         if f[y][x] in LIQUID_COLORS:
@@ -304,85 +290,149 @@ class App:
                 if c > 0:
                     color = PALETTE.get(c, (255, 255, 255))
                     clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
-
-        # 内部サーフェスをウィンドウ内にアスペクト比維持で拡大
         final_scale = min(self.window_width / WIDTH, self.window_height / HEIGHT)
         dest_width = int(WIDTH * final_scale)
         dest_height = int(HEIGHT * final_scale)
         scaled_surface = pygame.transform.scale(clock_surface, (dest_width, dest_height))
-
-        # ウィンドウ全体を黒で塗り、中央に配置（letterbox）
         self.screen.fill((0, 0, 0))
         offset_x = (self.window_width - dest_width) // 2
         offset_y = (self.window_height - dest_height) // 2
         self.screen.blit(scaled_surface, (offset_x, offset_y))
 
+    def run(self, acceleration=1):
+        clock = pygame.time.Clock()
+        running = True
+        if acceleration == 1:
+            while running:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
+                    elif event.type == pygame.WINDOWRESIZED:
+                        self.update_canvas_size()
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        self.handle_mouse(event.pos, event.button)
+                    elif event.type == pygame.MOUSEMOTION:
+                        if event.buttons[0]:
+                            self.handle_mouse(event.pos, 1)
+                        if event.buttons[2]:
+                            self.handle_mouse(event.pos, 3)
+                self.update()
+                self.draw()
+                pygame.display.flip()
+                clock.tick(20)
+        else:
+            start_time = datetime.now()
+            while running:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
+                    elif event.type == pygame.WINDOWRESIZED:
+                        self.update_canvas_size()
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        self.handle_mouse(event.pos, event.button)
+                    elif event.type == pygame.MOUSEMOTION:
+                        if event.buttons[0]:
+                            self.handle_mouse(event.pos, 1)
+                        if event.buttons[2]:
+                            self.handle_mouse(event.pos, 3)
+                elapsed = datetime.now() - start_time
+                simulated_seconds = elapsed.total_seconds() * acceleration
+                simulated_time = start_time + timedelta(seconds=simulated_seconds)
+                self.update(simulated_time)
+                self.draw()
+                pygame.display.flip()
+                clock.tick(20 * acceleration)
+        pygame.quit()
+        sys.exit()
 
-def waterclock_main(acceleration: int):
-    pygame.init()
-    app = App()
-    clock = pygame.time.Clock()
-    running = True
 
-    if acceleration == 1:
+# --- curses版クラス ---
+class AppCurses(BaseApp):
+    def __init__(self, stdscr):
+        super().__init__()
+        self.stdscr = stdscr
+        curses.curs_set(0)
+        self.stdscr.nodelay(True)
+        self.stdscr.timeout(0)
+        curses.mousemask(0)  # マウス処理は無効
+        curses.start_color()
+        # シンプルな色マッピング（シミュレーション色→curses色）
+        self.color_map = {
+            0: (curses.COLOR_WHITE, curses.COLOR_WHITE),
+            8: (curses.COLOR_CYAN, curses.COLOR_CYAN),
+            9: (curses.COLOR_BLUE, curses.COLOR_BLUE),
+            10: (curses.COLOR_BLUE, curses.COLOR_BLUE),
+            11: (curses.COLOR_RED, curses.COLOR_RED),
+            16: (curses.COLOR_BLACK, curses.COLOR_BLACK)
+        }
+        self.color_pairs = {}
+        pair_number = 1
+        for sim_color, (fg, bg) in self.color_map.items():
+            try:
+                curses.init_pair(pair_number, fg, bg)
+            except curses.error:
+                curses.init_pair(pair_number, curses.COLOR_WHITE, curses.COLOR_BLACK)
+            self.color_pairs[sim_color] = curses.color_pair(pair_number)
+            pair_number += 1
+        self.stdscr.clear()
+
+    def get_screen_offsets(self):
+        max_y, max_x = self.stdscr.getmaxyx()
+        # 横幅が十分なら各ピクセルを2文字で描画
+        horz_scale = 2 if max_x >= WIDTH * 2 else 1
+        offset_y = (max_y - HEIGHT) // 2 if max_y >= HEIGHT else 0
+        offset_x = (max_x - (WIDTH * horz_scale)) // 2 if max_x >= WIDTH * horz_scale else 0
+        return offset_y, offset_x, horz_scale
+
+    def draw(self):
+        self.stdscr.erase()
+        offset_y, offset_x, horz_scale = self.get_screen_offsets()
+        for y in range(HEIGHT):
+            for x in range(WIDTH):
+                c = self.field[y][x]
+                if c == 0:
+                    for prev in reversed(self.prev_fields):
+                        if prev[y][x] in LIQUID_COLORS:
+                            c = prev[y][x]
+                            break
+                attr = self.color_pairs.get(c, curses.A_NORMAL)
+                # 描画文字は "."、横幅が2の場合は ".." と描画
+                text = "." * horz_scale
+                try:
+                    self.stdscr.addstr(offset_y + y, offset_x + x * horz_scale, text, attr)
+                except curses.error:
+                    pass
+        self.stdscr.refresh()
+
+    def run(self):
+        running = True
+        fps = 20
+        frame_delay = 1.0 / fps
         while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
+            try:
+                key = self.stdscr.getch()
+                if key == ord("q"):
                     running = False
-                elif event.type == pygame.WINDOWRESIZED:
-                    app.update_canvas_size()
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    app.handle_mouse(event.pos, event.button)
-                elif event.type == pygame.MOUSEMOTION:
-                    # ドラッグ中の場合、各ボタンの状態に応じて更新
-                    if event.buttons[0]:
-                        app.handle_mouse(event.pos, 1)
-                    if event.buttons[2]:
-                        app.handle_mouse(event.pos, 3)
-            app.update()
-            app.draw()
-            pygame.display.flip()
-            clock.tick(20)  # 約20FPS
-    else:
-        start_time = datetime.now()
-
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                elif event.type == pygame.WINDOWRESIZED:
-                    app.update_canvas_size()
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    app.handle_mouse(event.pos, event.button)
-                elif event.type == pygame.MOUSEMOTION:
-                    if event.buttons[0]:
-                        app.handle_mouse(event.pos, 1)
-                    if event.buttons[2]:
-                        app.handle_mouse(event.pos, 3)
-
-            # 経過実時間に加速度を乗じたシミュレーション時刻を生成
-            elapsed = datetime.now() - start_time
-            simulated_seconds = elapsed.total_seconds() * acceleration
-            simulated_time = start_time + timedelta(seconds=simulated_seconds)
-
-            app.update(now=simulated_time)
-            app.draw()
-            pygame.display.flip()
-            clock.tick(20 * acceleration)
-
-    pygame.quit()
-    sys.exit()
+                # マウスイベントは無視
+            except Exception:
+                pass
+            now = datetime.now()
+            self.update(now)
+            self.draw()
+            time.sleep(frame_delay)
 
 
+# --- メイン処理 ---
 def main():
-    parser = argparse.ArgumentParser(description="Water Clock Simulation Test with Acceleration")
-    parser.add_argument(
-        "-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)"
-    )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser = argparse.ArgumentParser(description="Water Clock Simulation with Pygame or Curses")
+    parser.add_argument("--curses", action="store_true", help="Use curses for terminal rendering")
+    parser.add_argument("-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)")
     args = parser.parse_args()
-
-    waterclock_main(acceleration=args.acceleration)
+    if args.curses:
+        curses.wrapper(lambda stdscr: AppCurses(stdscr).run())
+    else:
+        app = AppPygame()
+        app.run(acceleration=args.acceleration)
 
 
 if __name__ == "__main__":
