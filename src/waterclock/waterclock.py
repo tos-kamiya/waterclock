@@ -5,8 +5,6 @@ import random
 import sys
 import time
 
-import pygame
-
 try:
     from .__about__ import __version__
 except ImportError:
@@ -17,7 +15,7 @@ DIGIT_DISP_ZOOM = 3
 WIDTH = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
 HEIGHT = 7 * DIGIT_DISP_ZOOM            # 21
 WALL_COLOR = 16
-SINKHOLE_OPENING_PERIOD = 30
+SINKHOLE_OPENING_PERIOD = 35
 LIQUID_MOVE_INTERVAL = 4
 LIQUID_SEP_INTERVAL = 120
 LIQUID_DROP_SIZE = 2
@@ -265,8 +263,9 @@ class BaseApp:
 
 # --- pygame版クラス ---
 class AppPygame(BaseApp):
-    def __init__(self):
+    def __init__(self, pygame):
         super().__init__()
+        self.pygame = pygame
         pygame.init()
         self.window_width = WIDTH * 10
         self.window_height = HEIGHT * 10
@@ -297,6 +296,7 @@ class AppPygame(BaseApp):
             self.field[field_y][field_x] = 0
 
     def draw(self):
+        pygame = self.pygame
         clock_surface = pygame.Surface((WIDTH, HEIGHT))
         clock_surface.fill(PALETTE[0])
         for y in range(HEIGHT):
@@ -319,6 +319,7 @@ class AppPygame(BaseApp):
         self.screen.blit(scaled_surface, (offset_x, offset_y))
 
     def run(self, acceleration=1):
+        pygame = self.pygame
         clock = pygame.time.Clock()
         running = True
         if acceleration == 1:
@@ -453,7 +454,8 @@ def main():
         import curses
         curses.wrapper(lambda stdscr: AppCurses(curses, stdscr).run())
     else:
-        app = AppPygame()
+        import pygame
+        app = AppPygame(pygame)
         app.run(acceleration=args.acceleration)
 
 
