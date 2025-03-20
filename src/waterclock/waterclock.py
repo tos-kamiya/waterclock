@@ -6,7 +6,6 @@ import sys
 import time
 
 import pygame
-import curses
 
 try:
     from .__about__ import __version__
@@ -368,8 +367,9 @@ class AppPygame(BaseApp):
 
 # --- curses版クラス ---
 class AppCurses(BaseApp):
-    def __init__(self, stdscr):
+    def __init__(self, curses, stdscr):
         super().__init__()
+        self.curses = curses
         self.stdscr = stdscr
         curses.curs_set(0)
         self.stdscr.nodelay(True)
@@ -405,6 +405,7 @@ class AppCurses(BaseApp):
         return offset_y, offset_x, horz_scale
 
     def draw(self):
+        curses = self.curses
         self.stdscr.erase()
         offset_y, offset_x, horz_scale = self.get_screen_offsets()
         for y in range(HEIGHT):
@@ -449,7 +450,8 @@ def main():
     parser.add_argument("-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)")
     args = parser.parse_args()
     if args.curses:
-        curses.wrapper(lambda stdscr: AppCurses(stdscr).run())
+        import curses
+        curses.wrapper(lambda stdscr: AppCurses(curses, stdscr).run())
     else:
         app = AppPygame()
         app.run(acceleration=args.acceleration)
