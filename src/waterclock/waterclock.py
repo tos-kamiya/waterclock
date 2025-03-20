@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import random
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from .__about__ import __version__
