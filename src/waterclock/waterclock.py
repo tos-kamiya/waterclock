@@ -112,7 +112,7 @@ def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
         digit: The digit (0-9) to display.
     """
     # Clear walls in the digit display area
-    for y in range(0, 6 * DIGIT_DISP_ZOOM):
+    for y in range(1 * DIGIT_DISP_ZOOM, 6 * DIGIT_DISP_ZOOM):
         for x in range((1 + pos * 4) * DIGIT_DISP_ZOOM, (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM):
             if field[y][x] == WALL_COLOR:
                 field[y][x] = 0
