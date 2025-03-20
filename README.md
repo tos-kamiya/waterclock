@@ -1,21 +1,24 @@
-Waterclock
-==========
+→ English [→ 日本語🇯🇵](README-ja_JP.md)
 
-デジタルの水時計。
+# Water Clock
+
+A digital water clock.
 
 ![](waterclock-screenshot3.png)
 
-時計の数字の形の入れ物に水滴が落下・移動する様子がシミュレーションされます。  
+This project simulates water droplets falling and moving inside containers shaped like digital clock digits.
 
-オンライン版もあります → https://www.toshihirokamiya.com/waterclock/
+An online version is also available → [https://www.toshihirokamiya.com/waterclock/](https://www.toshihirokamiya.com/waterclock/)
 
-## インストール
+## Installation
+
+Using pipx:
 
 ```sh
 pipx install git+https://github.com/tos-kamiya/waterclock
 ```
 
-または、
+Or, clone and install:
 
 ```sh
 git clone https://github.com/tos-kamiya/waterclock
@@ -23,3 +26,4 @@ cd waterclock
 pip install .
 ```
 
+After installation, launch the clock with the `waterclock` command.
