@@ -81,6 +81,14 @@
       }
       // 一番下の行
       field.push(new Array(WIDTH).fill(0));
+      
+      // 時と分の間に「:」を描画する
+      let x = 2 * 4 * DIGIT_DISP_ZOOM + Math.floor(DIGIT_DISP_ZOOM / 2);
+      let y = 2 * DIGIT_DISP_ZOOM + Math.floor(DIGIT_DISP_ZOOM / 2);
+      field[y][x] = 0;
+      y = 4 * DIGIT_DISP_ZOOM + Math.floor(DIGIT_DISP_ZOOM / 2);
+      field[y][x] = 0;
+      
       return field;
     }
     
@@ -187,10 +195,19 @@
     
         this.canvas = document.getElementById("canvas");
         this.ctx = this.canvas.getContext("2d");
-        // メインキャンバスでもスムージングを無効化
         this.ctx.imageSmoothingEnabled = false;
         this.updateCanvasSize();
         window.addEventListener("resize", () => this.updateCanvasSize());
+    
+        // 右クリックメニューを無効化
+        this.canvas.addEventListener("contextmenu", e => e.preventDefault());
+        // マウスイベントリスナーを追加（クリックおよびドラッグ）
+        this.canvas.addEventListener("mousedown", e => this.handleMouse(e));
+        this.canvas.addEventListener("mousemove", e => {
+          if (e.buttons & 1 || e.buttons & 2) {
+            this.handleMouse(e);
+          }
+        });
       }
     
       updateCanvasSize() {
@@ -198,6 +215,36 @@
         this.window_height = window.innerHeight;
         this.canvas.width = this.window_width;
         this.canvas.height = this.window_height;
+      }
+    
+      handleMouse(e) {
+        // 描画時の letterbox 領域を計算
+        const finalScale = Math.min(this.window_width / WIDTH, this.window_height / HEIGHT);
+        const destWidth = Math.floor(WIDTH * finalScale);
+        const destHeight = Math.floor(HEIGHT * finalScale);
+        const offsetX = Math.floor((this.window_width - destWidth) / 2);
+        const offsetY = Math.floor((this.window_height - destHeight) / 2);
+    
+        const mx = e.clientX;
+        const my = e.clientY;
+    
+        if (mx < offsetX || mx >= offsetX + destWidth || my < offsetY || my >= offsetY + destHeight) {
+          return;
+        }
+    
+        const field_x = Math.floor((mx - offsetX) / finalScale);
+        const field_y = Math.floor((my - offsetY) / finalScale);
+    
+        if (field_x < 0 || field_x >= WIDTH || field_y < 0 || field_y >= HEIGHT) {
+          return;
+        }
+    
+        // 左クリック: WALL_COLOR、右クリック: 背景(0)
+        if (e.buttons & 1) {  // 左ボタン
+          this.field[field_y][field_x] = WALL_COLOR;
+        } else if (e.buttons & 2) {  // 右ボタン
+          this.field[field_y][field_x] = 0;
+        }
       }
     
       fieldUpdate(now = new Date()) {
@@ -224,7 +271,7 @@
           }
         }
     
-        // 画面の端の水滴除去
+        // 画面端の水滴除去
         for (let y = 0; y < HEIGHT; y++) {
           if (LIQUID_COLORS.includes(this.field[y][0])) {
             this.field[y][0] = 0;
@@ -331,7 +378,7 @@
         offCanvas.width = WIDTH;
         offCanvas.height = HEIGHT;
         const offCtx = offCanvas.getContext("2d");
-        offCtx.imageSmoothingEnabled = false;  // 無効化
+        offCtx.imageSmoothingEnabled = false;
         offCtx.fillStyle = PALETTE[0];
         offCtx.fillRect(0, 0, WIDTH, HEIGHT);
     
@@ -355,7 +402,7 @@
         }
     
         // メインキャンバスへ letterbox 表示（nearest-neighbor scaling）
-        this.ctx.imageSmoothingEnabled = false;  // 無効化
+        this.ctx.imageSmoothingEnabled = false;
         const finalScale = Math.min(this.window_width / WIDTH, this.window_height / HEIGHT);
         const destWidth = Math.floor(WIDTH * finalScale);
         const destHeight = Math.floor(HEIGHT * finalScale);
@@ -372,7 +419,7 @@
     const fps = 20;
     const interval = 1000 / fps;
     let then = Date.now();
-
+    
     function loop() {
       requestAnimationFrame(loop);
       const now = Date.now();

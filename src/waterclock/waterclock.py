@@ -14,14 +14,14 @@ except ImportError:
 DIGIT_DISP_ZOOM = 3
 WIDTH = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
 HEIGHT = 7 * DIGIT_DISP_ZOOM  # 21
-WALL_COLOR = 13
+WALL_COLOR = 16
 SINKHOLE_OPENING_PERIOD = 30
 LIQUID_MOVE_INTERVAL = 4
 LIQUID_SEP_INTERVAL = 120
 LIQUID_DROP_SIZE = 2
 LIQUID_DROP_INTERVAL = 14
 
-LIQUID_COLOR_POPULATION = {1: 150, 3: 850, 4: 1}
+LIQUID_COLOR_POPULATION = {8: 150, 10: 850, 11: 1}
 LIQUID_COLORS = list(LIQUID_COLOR_POPULATION.keys())
 LIQUID_COLOR_QUEUE = []
 for c, p in LIQUID_COLOR_POPULATION.items():
@@ -31,11 +31,11 @@ random.shuffle(LIQUID_COLOR_QUEUE)
 # パレット（16進カラー→RGB）
 PALETTE = {
     0: (0xC0, 0xC0, 0xC0),  # 背景
-    1: (0x84, 0xC2, 0xDA),  # 水1
-    2: (0x81, 0xB8, 0xCF),  # 水2
-    3: (0x4C, 0xA4, 0xC4),  # 水3
-    4: (0xF3, 0x8C, 0x79),  # 水4
-    13: (0x20, 0x20, 0x20),  # 壁
+    8: (0x84, 0xC2, 0xDA),  # 水1
+    9: (0x81, 0xB8, 0xCF),  # 水2
+    10: (0x4C, 0xA4, 0xC4),  # 水3
+    11: (0xF3, 0x8C, 0x79),  # 水4
+    16: (0x20, 0x20, 0x20),  # 壁
 }
 
 # 数字パターン（0～9）
@@ -61,6 +61,14 @@ def create_field():
     field += [[WALL_COLOR] * WIDTH for _ in range(DIGIT_DISP_ZOOM, HEIGHT)]
     # 一番下の行
     field.append([0] * WIDTH)
+
+    # 時と分の間に「:」を描画する
+    x = 2 * 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
+    y = 2 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
+    field[y][x] = 0
+    y = 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
+    field[y][x] = 0
+
     return field
 
 
@@ -150,12 +158,36 @@ class App:
         self.window_width = WIDTH * 10
         self.window_height = HEIGHT * 10
         self.screen = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
-        pygame.display.set_caption("Water Clock")
+        pygame.display.set_caption("Water Clock v" + __version__)
 
     def update_canvas_size(self):
         width, height = self.screen.get_rect().size
         self.window_width = width
         self.window_height = height
+
+    def handle_mouse(self, pos, button):
+        """
+        マウス座標 (pos) を内部のフィールド座標に変換し、
+        左クリックなら WALL_COLOR、右クリックなら背景(0)に設定する。
+        """
+        final_scale = min(self.window_width / WIDTH, self.window_height / HEIGHT)
+        dest_width = int(WIDTH * final_scale)
+        dest_height = int(HEIGHT * final_scale)
+        offset_x = (self.window_width - dest_width) // 2
+        offset_y = (self.window_height - dest_height) // 2
+
+        mx, my = pos
+        if mx < offset_x or mx >= offset_x + dest_width or my < offset_y or my >= offset_y + dest_height:
+            return
+        field_x = int((mx - offset_x) / final_scale)
+        field_y = int((my - offset_y) / final_scale)
+        if field_x < 0 or field_x >= WIDTH or field_y < 0 or field_y >= HEIGHT:
+            return
+
+        if button == 1:  # 左クリック：壁に変更
+            self.field[field_y][field_x] = WALL_COLOR
+        elif button == 3:  # 右クリック：背景に変更
+            self.field[field_y][field_x] = 0
 
     def field_update(self, now=None):
         if now is None:
@@ -299,6 +331,14 @@ def waterclock_main(acceleration: int):
                     running = False
                 elif event.type == pygame.WINDOWRESIZED:
                     app.update_canvas_size()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    app.handle_mouse(event.pos, event.button)
+                elif event.type == pygame.MOUSEMOTION:
+                    # ドラッグ中の場合、各ボタンの状態に応じて更新
+                    if event.buttons[0]:
+                        app.handle_mouse(event.pos, 1)
+                    if event.buttons[2]:
+                        app.handle_mouse(event.pos, 3)
             app.update()
             app.draw()
             pygame.display.flip()
@@ -312,6 +352,13 @@ def waterclock_main(acceleration: int):
                     running = False
                 elif event.type == pygame.WINDOWRESIZED:
                     app.update_canvas_size()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    app.handle_mouse(event.pos, event.button)
+                elif event.type == pygame.MOUSEMOTION:
+                    if event.buttons[0]:
+                        app.handle_mouse(event.pos, 1)
+                    if event.buttons[2]:
+                        app.handle_mouse(event.pos, 3)
 
             # 経過実時間に加速度を乗じたシミュレーション時刻を生成
             elapsed = datetime.now() - start_time
