@@ -8,6 +8,11 @@ import time
 import pygame
 import curses
 
+try:
+    from .__about__ import __version__
+except ImportError:
+    __version__ = "(unknown)"
+
 # --- 定数 ---
 DIGIT_DISP_ZOOM = 3
 WIDTH = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
@@ -50,6 +55,10 @@ DIGIT_PATTERN_STRS = [
     "111\n101\n111\n001\n111\n"   # 9
 ]
 
+# コロン描画位置（時と分の区切り）
+COLON_X = 2 * 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
+COLON_Y1 = 2 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
+COLON_Y2 = 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
 
 # --- ユーティリティ関数 ---
 def create_field():
@@ -63,12 +72,9 @@ def create_field():
     # 一番下の行：背景 (0)
     field.append([0] * WIDTH)
     
-    # 時と分の間に「:」を描画する
-    x = 2 * 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
-    y = 2 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
-    field[y][x] = 0
-    y = 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
-    field[y][x] = 0
+    # 初期状態ではコロンを背景（0）として描画
+    field[COLON_Y1][COLON_X] = 0
+    field[COLON_Y2][COLON_X] = 0
     return field
 
 
@@ -154,6 +160,19 @@ class BaseApp:
         self.dropSepPicks = []
         self.liquidColorIndex = 0
         self.frameCount = 0
+
+    def update_colon(self, now=None):
+        if now is None:
+            now = datetime.now()
+
+        if now.second % 6 < 3:
+            for y in [COLON_Y1, COLON_Y2]:
+                if self.field[y][COLON_X] != WALL_COLOR:
+                    self.field[y][COLON_X] = WALL_COLOR
+        else:
+            for y in [COLON_Y1, COLON_Y2]:
+                if self.field[y][COLON_X] == WALL_COLOR:
+                    self.field[y][COLON_X] = 0
 
     def field_update(self, now=None):
         if now is None:
@@ -242,6 +261,7 @@ class BaseApp:
             self.prev_fields.pop(0)
         self.frameCount += 1
         self.field_update(now)
+        self.update_colon(now)
 
 
 # --- pygame版クラス ---
@@ -252,7 +272,7 @@ class AppPygame(BaseApp):
         self.window_width = WIDTH * 10
         self.window_height = HEIGHT * 10
         self.screen = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
-        pygame.display.set_caption("Water Clock")
+        pygame.display.set_caption("Water Clock v" + __version__)
 
     def update_canvas_size(self):
         width, height = self.screen.get_rect().size
