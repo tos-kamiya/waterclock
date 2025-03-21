@@ -51,9 +51,15 @@ DIGIT_BITMAP_STRINGS: List[str] = [
     "111\n101\n111\n101\n111\n",  # 8
     "111\n101\n111\n001\n111\n",  # 9
 ]
-DIGIT_BITMAPS: List[List[List[int]]] = [[[int(n) for n in ss] for ss in s.strip().split("\n")] for s in DIGIT_BITMAP_STRINGS]
-DIGIT_PIXELS_ALWAYS_ON: List[Tuple[int, int]] = [(x, y) for y in range(5) for x in range(3) if all(p[y][x] == 1 for p in DIGIT_BITMAPS)]
-DIGIT_PIXELS_ALWAYS_OFF: List[Tuple[int, int]] = [(x, y) for y in range(5) for x in range(3) if all(p[y][x] == 0 for p in DIGIT_BITMAPS)]
+DIGIT_BITMAPS: List[List[List[int]]] = [
+    [[int(n) for n in ss] for ss in s.strip().split("\n")] for s in DIGIT_BITMAP_STRINGS
+]
+DIGIT_PIXELS_ALWAYS_ON: List[Tuple[int, int]] = [
+    (x, y) for y in range(5) for x in range(3) if all(p[y][x] == 1 for p in DIGIT_BITMAPS)
+]
+DIGIT_PIXELS_ALWAYS_OFF: List[Tuple[int, int]] = [
+    (x, y) for y in range(5) for x in range(3) if all(p[y][x] == 0 for p in DIGIT_BITMAPS)
+]
 DIGIT_PIXELS_UNCHANGED: List[Tuple[int, int]] = DIGIT_PIXELS_ALWAYS_ON + DIGIT_PIXELS_ALWAYS_OFF
 
 # Colon drawing positions (separator between hour and minute)
@@ -148,6 +154,19 @@ def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
 
 
 def droplet_go_down(field: List[List[int]], x: int, y: int) -> bool:
+    """Simulate the downward movement of a droplet.
+
+    If the cell below is empty, the droplet moves down. If the cell below
+    is occupied by another liquid, it attempts to move diagonally.
+
+    Args:
+        field: The simulation field.
+        x: The x-coordinate of the droplet.
+        y: The y-coordinate of the droplet.
+
+    Returns:
+        True if the droplet moved, False otherwise.
+    """
     c: int = field[y][x]
     if c not in LIQUID_COLORS:
         return False
@@ -219,6 +238,19 @@ def droplet_swap(field: List[List[int]], x: int, y: int, prefer_x: bool) -> bool
 
 
 def droplet_move(field: List[List[int]], x: int, y: int) -> bool:
+    """Move a droplet horizontally if there's space.
+
+    Checks if a droplet can move sideways.  It prioritizes moving to a side
+    where the adjacent cell is *not* empty, but the destination is.
+
+    Args:
+        field (List[List[int]]): The simulation field.
+        x (int): The droplet's X position.
+        y (int): The droplet's Y position.
+
+    Returns:
+        bool: True if the droplet moved, False otherwise.
+    """
     c: int = field[y][x]
     if c not in LIQUID_COLORS:
         return False
@@ -235,6 +267,18 @@ def droplet_move(field: List[List[int]], x: int, y: int) -> bool:
 
 
 def pop_pick(pick_queue: List[int], pick_interval: int) -> int:
+    """Pops a value from a queue, replenishing the queue if it's empty.
+
+    Args:
+        pick_queue: A list acting as the queue.  This list will be modified.
+        pick_interval: The interval at which the queue is repopulated.
+
+    Returns:
+        The next value from the queue.
+
+    Raises:
+        AssertionError: if pick_interval is not greater than zero.
+    """
     assert pick_interval > 0
     if not pick_queue:
         picks: List[int] = []
@@ -304,6 +348,13 @@ class BaseApp:
                     put_digit(self.field, p, self.dispDigits[p])
 
     def update_droplets(self) -> None:
+        """Update the state of the droplets in the simulation.
+
+        This function handles:
+        - Removing droplets that have reached the edges of the field.
+        - Moving droplets down, sideways, and swapping their positions.
+        - Generating new droplets at the top of the field.
+        """
         # Remove droplets at the edges of the field
         for y in range(HEIGHT):
             if self.field[y][0] in LIQUID_COLORS:
@@ -321,8 +372,10 @@ class BaseApp:
             for x in range(1, WIDTH - 1):
                 (
                     droplet_go_down(self.field, x, y)
-                    or (y + x) % DROPLET_MOVE_INTERVAL == move_pick and droplet_move(self.field, x, y)
-                    or (y + x) % DROPLET_SWAP_INTERVAL == swap_pick and droplet_swap(self.field, x, y, random.randint(0, 1) == 0)
+                    or (y + x) % DROPLET_MOVE_INTERVAL == move_pick
+                    and droplet_move(self.field, x, y)
+                    or (y + x) % DROPLET_SWAP_INTERVAL == swap_pick
+                    and droplet_swap(self.field, x, y, random.randint(0, 1) == 0)
                 )
 
         # Generate new droplets
@@ -334,6 +387,16 @@ class BaseApp:
             self.field[0][self.dropX] = LIQUID_COLOR_QUEUE[self.liquidColorIndex]
 
     def update_terrain_by_cursor(self, cursor_pos: Tuple[int, int], button_clicked: int) -> None:
+        """Update the terrain based on cursor interaction.
+
+        Allows the user to modify the terrain by clicking with the mouse.
+        Left-click sets the cell to WALL_COLOR, right-click sets it to background (0).
+
+        Args:
+            cursor_pos: The (x, y) coordinates of the cursor on the field.
+            button_clicked: An integer representing the clicked mouse button
+                (1 for left-click, 3 for right-click).
+        """
         x, y = cursor_pos
         if 0 <= x < WIDTH and 0 <= y < HEIGHT:
             if button_clicked == 1:  # Left-click: set to WALL_COLOR
@@ -342,6 +405,16 @@ class BaseApp:
                 self.field[y][x] = 0
 
     def update_droplets_by_cursor(self, cursor_pos: Tuple[int, int], cursor_move: Tuple[int, int]) -> None:
+        """Update droplet positions based on cursor interaction.
+
+        Allows dragging of liquid droplets with the mouse.  If a droplet is
+        dragged to an empty space, it moves. If dragged near another droplet,
+        they can swap.
+
+        Args:
+            cursor_pos: Current cursor (x,y) on the field.
+            cursor_move:  The (dx,dy) movement of the cursor.
+        """
         x, y = cursor_pos
         if 0 <= x < WIDTH and 0 <= y < HEIGHT and self.field[y][x] in LIQUID_COLORS:
             vx, vy = cursor_move
@@ -363,12 +436,12 @@ class BaseApp:
                         break  # for dx, dy
 
     def update(
-            self, 
-            now: Optional[datetime] = None, 
-            cursor_pos: Optional[Tuple[int, int]] = None, 
-            cursor_move: Optional[Tuple[int, int]] = None, 
-            button_clicked: Optional[int] = None
-        ) -> None:
+        self,
+        now: Optional[datetime] = None,
+        cursor_pos: Optional[Tuple[int, int]] = None,
+        cursor_move: Optional[Tuple[int, int]] = None,
+        button_clicked: Optional[int] = None,
+    ) -> None:
         """Update the simulation state by updating the field and colon,
         optionally handling mouse pointer interactions and click events.
 
