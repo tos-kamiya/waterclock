@@ -16,7 +16,7 @@ DIGIT_DISP_ZOOM: int = 3
 WIDTH: int = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
 HEIGHT: int = 7 * DIGIT_DISP_ZOOM  # 21
 WALL_COLOR: int = 16
-SINKHOLE_OPENING_PERIOD: int = 35
+SINKHOLE_OPENING_PERIOD: int = 50
 LIQUID_MOVE_INTERVAL: int = 4
 LIQUID_SEP_INTERVAL: int = 120
 LIQUID_DROP_SIZE: int = 2
@@ -40,7 +40,7 @@ PALETTE: Dict[int, Tuple[int, int, int]] = {
 }
 
 # Digit pattern strings (for 0 to 9)
-DIGIT_PATTERN_STRS: List[str] = [
+DIGIT_BITMAP_STRINGS: List[str] = [
     "111\n101\n101\n101\n111\n",  # 0
     "001\n001\n001\n001\n001\n",  # 1
     "111\n001\n111\n100\n111\n",  # 2
@@ -52,6 +52,10 @@ DIGIT_PATTERN_STRS: List[str] = [
     "111\n101\n111\n101\n111\n",  # 8
     "111\n101\n111\n001\n111\n",  # 9
 ]
+DIGIT_BITMAPS: List[List[List[int]]] = [[[int(n) for n in ss] for ss in s.strip().split("\n")] for s in DIGIT_BITMAP_STRINGS]
+DIGIT_PIXELS_ALWAYS_ON: List[Tuple[int, int]] = [(x, y) for y in range(5) for x in range(3) if all(p[y][x] == 1 for p in DIGIT_BITMAPS)]
+DIGIT_PIXELS_ALWAYS_OFF: List[Tuple[int, int]] = [(x, y) for y in range(5) for x in range(3) if all(p[y][x] == 0 for p in DIGIT_BITMAPS)]
+DIGIT_PIXELS_UNCHANGED: List[Tuple[int, int]] = DIGIT_PIXELS_ALWAYS_ON + DIGIT_PIXELS_ALWAYS_OFF
 
 # Colon drawing positions (separator between hour and minute)
 COLON_X: int = 2 * 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
@@ -83,6 +87,13 @@ def create_field() -> List[List[int]]:
     # Initially, draw the colon as background (0)
     field[COLON_Y1][COLON_X] = 0
     field[COLON_Y2][COLON_X] = 0
+
+    for pos in range(4):
+        for dx, dy in DIGIT_PIXELS_ALWAYS_ON:
+            for y in range((1 + dy) * DIGIT_DISP_ZOOM, (1 + dy + 1) * DIGIT_DISP_ZOOM):
+                for x in range((1 + pos * 4 + dx) * DIGIT_DISP_ZOOM, (1 + pos * 4 + dx + 1) * DIGIT_DISP_ZOOM):
+                    field[y][x] = 0
+
     return field
 
 
@@ -93,11 +104,10 @@ def put_sinkhole(field: List[List[int]], pos: int) -> None:
         field: The simulation field.
         pos: The digit position (0-3) to update.
     """
-    x_indices = [(1 + pos * 4 + 0) * DIGIT_DISP_ZOOM + 1, (1 + pos * 4 + 2) * DIGIT_DISP_ZOOM + 1]
-    for x in x_indices:
-        for y in range(6 * DIGIT_DISP_ZOOM, 7 * DIGIT_DISP_ZOOM):
-            if field[y][x] == WALL_COLOR:
-                field[y][x] = 0
+    x = (pos * 4 + 3) * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM - 2
+    for y in range(6 * DIGIT_DISP_ZOOM, 7 * DIGIT_DISP_ZOOM):
+        if field[y][x] == WALL_COLOR:
+            field[y][x] = 0
 
 
 def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
@@ -112,19 +122,27 @@ def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
         digit: The digit (0-9) to display.
     """
     # Clear walls in the digit display area
-    for y in range(1 * DIGIT_DISP_ZOOM, 6 * DIGIT_DISP_ZOOM):
-        for x in range((1 + pos * 4) * DIGIT_DISP_ZOOM, (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM):
-            if field[y][x] == WALL_COLOR:
-                field[y][x] = 0
-    # Overwrite the bottom row with wall color
-    for y in range(6 * DIGIT_DISP_ZOOM, 7 * DIGIT_DISP_ZOOM):
-        for x in range((1 + pos * 4) * DIGIT_DISP_ZOOM, (1 + pos * 4 + 3) * DIGIT_DISP_ZOOM):
-            field[y][x] = WALL_COLOR
-    # Reflect the digit pattern (set wall color where the pattern has "0")
-    dp: List[str] = DIGIT_PATTERN_STRS[digit].strip().split("\n")
     for dy in range(5):
         for dx in range(3):
-            if dp[dy][dx] == "0":
+            if (dx, dy) in DIGIT_PIXELS_UNCHANGED:
+                continue
+            for y in range((1 + dy) * DIGIT_DISP_ZOOM, (1 + dy + 1) * DIGIT_DISP_ZOOM):
+                for x in range((1 + pos * 4 + dx) * DIGIT_DISP_ZOOM, (1 + pos * 4 + dx + 1) * DIGIT_DISP_ZOOM):
+                    if field[y][x] == WALL_COLOR:
+                        field[y][x] = 0
+
+    # Overwrite the bottom row with wall color
+    x = (pos * 4 + 3) * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM - 2
+    for y in range(6 * DIGIT_DISP_ZOOM, 7 * DIGIT_DISP_ZOOM):
+        field[y][x] = WALL_COLOR
+
+    # Reflect the digit pattern (set wall color where the pattern has "0")
+    db = DIGIT_BITMAPS[digit]
+    for dy in range(5):
+        for dx in range(3):
+            if (dx, dy) in DIGIT_PIXELS_UNCHANGED:
+                continue
+            if db[dy][dx] == 0:
                 for y in range((1 + dy) * DIGIT_DISP_ZOOM, (1 + dy + 1) * DIGIT_DISP_ZOOM):
                     for x in range((1 + pos * 4 + dx) * DIGIT_DISP_ZOOM, (1 + pos * 4 + dx + 1) * DIGIT_DISP_ZOOM):
                         field[y][x] = WALL_COLOR
@@ -246,6 +264,7 @@ class BaseApp:
             if self.dispDigitsUpdateCountdown == 0:
                 for p in self.dispDigitsUpdatePoss:
                     put_digit(self.field, p, self.dispDigits[p])
+
         # Remove droplets at the edges of the field
         for y in range(HEIGHT):
             if self.field[y][0] in LIQUID_COLORS:
@@ -255,6 +274,7 @@ class BaseApp:
         for x in range(WIDTH):
             if self.field[HEIGHT][x] == 0 and self.field[HEIGHT - 1][x] in LIQUID_COLORS:
                 self.field[HEIGHT - 1][x] = 0
+
         # Prepare timing data for droplet movement
         if not self.dropMovePicks:
             picks: List[int] = []
@@ -273,6 +293,7 @@ class BaseApp:
         dpMove: int = self.dropMovePicks.pop() if self.dropMovePicks else 0
         dsPick: int = self.dropSepPicks.pop() if self.dropSepPicks else 0
         dsPreferX: bool = random.randint(0, 1) == 0
+
         # Move droplets
         for y in range(HEIGHT, -1, -1):
             for x in range(1, WIDTH - 1):
@@ -300,6 +321,7 @@ class BaseApp:
                             self.field[y][x] = 0
                     elif (y + x) % LIQUID_SEP_INTERVAL == dsPick:
                         liquid_separate(self.field, x, y, dsPreferX)
+
         # Generate new droplets
         t: int = self.frameCount % (LIQUID_DROP_SIZE * (LIQUID_DROP_INTERVAL - self.dropAccel))
         if t < LIQUID_DROP_SIZE:
@@ -456,6 +478,7 @@ class AppCurses(BaseApp):
         self.stdscr.timeout(0)
         curses_module.mousemask(0)  # Disable mouse processing
         curses_module.start_color()
+
         # Simple color mapping (simulation color -> curses color)
         self.color_map: Dict[int, Tuple[int, int]] = {
             0: (curses_module.COLOR_WHITE, curses_module.COLOR_WHITE),
