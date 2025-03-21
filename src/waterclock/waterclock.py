@@ -16,10 +16,10 @@ WIDTH: int = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
 HEIGHT: int = 7 * DIGIT_DISP_ZOOM  # 21
 WALL_COLOR: int = 16
 SINKHOLE_OPENING_PERIOD: int = 48
-LIQUID_MOVE_INTERVAL: int = 4
-LIQUID_SEP_INTERVAL: int = 60
-LIQUID_DROP_SIZE: int = 2
-LIQUID_DROP_INTERVAL: int = 14
+DROPLET_MOVE_INTERVAL: int = 4
+DROPLET_SWAP_INTERVAL: int = 60
+DROPLET_DROP_SIZE: int = 2
+DROPLET_DROP_INTERVAL: int = 14
 
 LIQUID_COLOR_POPULATION: Dict[int, int] = {8: 150, 10: 850, 11: 1}
 LIQUID_COLORS: List[int] = list(LIQUID_COLOR_POPULATION.keys())
@@ -147,8 +147,28 @@ def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
                         field[y][x] = WALL_COLOR
 
 
-def liquid_separate(field: List[List[int]], x: int, y: int, prefer_x: bool) -> None:
-    """Separate a liquid droplet to simulate its movement.
+def droplet_go_down(field: List[List[int]], x: int, y: int) -> bool:
+    c: int = field[y][x]
+    if c not in LIQUID_COLORS:
+        return False
+    if y >= HEIGHT:
+        return False
+
+    if y + 1 < HEIGHT and field[y + 1][x] == 0:
+        field[y + 1][x] = c
+        field[y][x] = 0
+        return True
+    elif y + 1 < HEIGHT and field[y + 1][x] in LIQUID_COLORS:
+        dx = x + random.choice([-1, 1])
+        if field[y + 1][dx] == 0:
+            field[y + 1][dx] = c
+            field[y][x] = 0
+            return True
+    return False
+
+
+def droplet_swap(field: List[List[int]], x: int, y: int, prefer_x: bool) -> bool:
+    """Swap movement of liquid droplets.
 
     Calculates a weighted displacement based on neighboring cells and
     swaps the droplet with an adjacent cell accordingly.
@@ -161,16 +181,17 @@ def liquid_separate(field: List[List[int]], x: int, y: int, prefer_x: bool) -> N
     """
     c: int = field[y][x]
     if c not in LIQUID_COLORS:
-        return
+        return False
+
     wx: int = 0
     wy: int = 0
     for dy in range(-2, 3):
         yy: int = y + dy
-        if yy < 0 or yy >= len(field):
+        if yy < 0 or yy >= HEIGHT:
             continue
         for dx in range(-2, 3):
             xx: int = x + dx
-            if xx < 0 or xx >= len(field[0]):
+            if xx < 0 or xx >= WIDTH:
                 continue
             dist: int = abs(dx) + abs(dy)
             if not (1 <= dist <= 3):
@@ -183,13 +204,45 @@ def liquid_separate(field: List[List[int]], x: int, y: int, prefer_x: bool) -> N
     if prefer_x:
         if wx != 0 and field[y][x + wx] in LIQUID_COLORS:
             field[y][x], field[y][x + wx] = field[y][x + wx], field[y][x]
+            return True
         elif wy != 0 and field[y + wy][x] in LIQUID_COLORS:
             field[y][x], field[y + wy][x] = field[y + wy][x], field[y][x]
+            return True
     else:
         if wy != 0 and field[y + wy][x] in LIQUID_COLORS:
             field[y][x], field[y + wy][x] = field[y + wy][x], field[y][x]
+            return True
         elif wx != 0 and field[y][x + wx] in LIQUID_COLORS:
             field[y][x], field[y][x + wx] = field[y][x + wx], field[y][x]
+            return True
+    return False
+
+
+def droplet_move(field: List[List[int]], x: int, y: int) -> bool:
+    c: int = field[y][x]
+    if c not in LIQUID_COLORS:
+        return False
+
+    if x - 1 >= 0 and field[y][x - 1] > 0 and field[y][x + 1] == 0:
+        field[y][x + 1] = c
+        field[y][x] = 0
+        return True
+    elif x + 1 < WIDTH and field[y][x + 1] > 0 and field[y][x - 1] == 0:
+        field[y][x - 1] = c
+        field[y][x] = 0
+        return True
+    return False
+
+
+def pop_pick(pick_queue: List[int], pick_interval: int) -> int:
+    assert pick_interval > 0
+    if not pick_queue:
+        picks: List[int] = []
+        for i in range(pick_interval):
+            picks.extend([i] * 5)
+        random.shuffle(picks)
+        pick_queue[:] = picks
+    return pick_queue.pop()
 
 
 # --- Base Simulation Class ---
@@ -197,34 +250,31 @@ class BaseApp:
     def __init__(self) -> None:
         """Initialize the simulation state."""
         self.field: List[List[int]] = create_field()
-        self.prev_fields: List[List[List[int]]] = []
+        self.prevFields: List[List[List[int]]] = []
+        self.digitUpdatedPoss: List[int] = []
+        self.sinkholeCounter: int = -1
+        self.dropMovePicks: List[int] = []
+        self.dropSwapPicks: List[int] = []
+        self.dropX: int = 0
+        self.liquidColorIndex: int = 0
+        self.frameCount: int = 0
+
         now: datetime = datetime.now()
         h: int = now.hour
         m: int = now.minute
         self.dispDigits: List[int] = [h // 10, h % 10, m // 10, m % 10]
         for p in range(4):
             put_digit(self.field, p, self.dispDigits[p])
-        self.dispDigitsUpdateCountdown: int = -1
-        self.dispDigitsUpdatePoss: List[int] = []
-        self.dropAccel: int = 0
-        self.dropX: int = 0
-        self.dropMovePicks: List[int] = []
-        self.dropSepPicks: List[int] = []
-        self.liquidColorIndex: int = 0
-        self.frameCount: int = 0
 
-    def update_colon(self, now: Optional[datetime] = None) -> None:
-        """Update the colon separator between hour and minute.
+    def update_terrain(self, now: datetime) -> None:
+        """Update the simulation field.
 
-        The colon alternates its state every 3 seconds (using WALL_COLOR and background)
-        so that it does not interfere with the moving droplets.
+        This includes updating the displayed digits, moving droplets,
+        and performing other field maintenance such as clearing droplets on edges.
 
         Args:
-            now: The current datetime. If None, the current system time is used.
+            now: The current datetime for simulation timing.
         """
-        if now is None:
-            now = datetime.now()
-
         if now.second % 6 < 3:
             # If in the first 3 seconds of a 6-second period, draw the colon with WALL_COLOR.
             for y in [COLON_Y1, COLON_Y2]:
@@ -236,34 +286,24 @@ class BaseApp:
                 if self.field[y][COLON_X] == WALL_COLOR:
                     self.field[y][COLON_X] = 0
 
-    def field_update(self, now: Optional[datetime] = None) -> None:
-        """Update the simulation field.
-
-        This includes updating the displayed digits, moving droplets,
-        and performing other field maintenance such as clearing droplets on edges.
-
-        Args:
-            now: The current datetime for simulation timing. If None, uses current system time.
-        """
-        if now is None:
-            now = datetime.now()
         h: int = now.hour
         m: int = now.minute
         ds: List[int] = [h // 10, h % 10, m // 10, m % 10]
         if ds != self.dispDigits:
-            self.dispDigitsUpdateCountdown = SINKHOLE_OPENING_PERIOD
-            self.dispDigitsUpdatePoss = []
+            self.sinkholeCounter = SINKHOLE_OPENING_PERIOD
+            self.digitUpdatedPoss = []
             for p in range(4):
                 if ds[p] != self.dispDigits[p]:
                     put_sinkhole(self.field, p)
-                    self.dispDigitsUpdatePoss.append(p)
+                    self.digitUpdatedPoss.append(p)
             self.dispDigits = ds
-        if self.dispDigitsUpdateCountdown >= 0:
-            self.dispDigitsUpdateCountdown -= 1
-            if self.dispDigitsUpdateCountdown == 0:
-                for p in self.dispDigitsUpdatePoss:
+        if self.sinkholeCounter >= 0:
+            self.sinkholeCounter -= 1
+            if self.sinkholeCounter == 0:
+                for p in self.digitUpdatedPoss:
                     put_digit(self.field, p, self.dispDigits[p])
 
+    def update_droplets(self) -> None:
         # Remove droplets at the edges of the field
         for y in range(HEIGHT):
             if self.field[y][0] in LIQUID_COLORS:
@@ -274,50 +314,20 @@ class BaseApp:
             if self.field[HEIGHT][x] == 0 and self.field[HEIGHT - 1][x] in LIQUID_COLORS:
                 self.field[HEIGHT - 1][x] = 0
 
-        # Prepare timing data for droplet movement
-        if not self.dropMovePicks:
-            picks: List[int] = []
-            for i in range(LIQUID_MOVE_INTERVAL):
-                picks.extend([i] * 5)
-            random.shuffle(picks)
-            self.dropMovePicks = picks
-        move_pick: int = self.dropMovePicks.pop()
-        if not self.dropSepPicks:
-            picks = []
-            for i in range(LIQUID_SEP_INTERVAL):
-                picks.extend([i] * 5)
-            random.shuffle(picks)
-            self.dropSepPicks = picks
-        sep_pick: int = self.dropSepPicks.pop()
-
         # Move droplets
+        move_pick = pop_pick(self.dropMovePicks, DROPLET_MOVE_INTERVAL)
+        swap_pick = pop_pick(self.dropSwapPicks, DROPLET_SWAP_INTERVAL)
         for y in range(HEIGHT, -1, -1):
             for x in range(1, WIDTH - 1):
-                c: int = self.field[y][x]
-                if c in LIQUID_COLORS:
-                    if y + 1 < HEIGHT and self.field[y + 1][x] == 0:
-                        self.field[y + 1][x] = c
-                        self.field[y][x] = 0
-                    elif y + 1 < HEIGHT and self.field[y + 1][x] in LIQUID_COLORS:
-                        dx = x + random.choice([-1, 1])
-                        if self.field[y + 1][dx] == 0:
-                            self.field[y + 1][dx] = c
-                            self.field[y][x] = 0
-                c: int = self.field[y][x]
-                if c in LIQUID_COLORS:
-                    if (y + x) % LIQUID_MOVE_INTERVAL == move_pick:
-                        if self.field[y][x - 1] > 0 and self.field[y][x + 1] == 0:
-                            self.field[y][x + 1] = c
-                            self.field[y][x] = 0
-                        elif self.field[y][x + 1] > 0 and self.field[y][x - 1] == 0:
-                            self.field[y][x - 1] = c
-                            self.field[y][x] = 0
-                    elif (y + x) % LIQUID_SEP_INTERVAL == sep_pick:
-                        liquid_separate(self.field, x, y, random.randint(0, 1) == 0)
+                (
+                    droplet_go_down(self.field, x, y)
+                    or (y + x) % DROPLET_MOVE_INTERVAL == move_pick and droplet_move(self.field, x, y)
+                    or (y + x) % DROPLET_SWAP_INTERVAL == swap_pick and droplet_swap(self.field, x, y, random.randint(0, 1) == 0)
+                )
 
         # Generate new droplets
-        t: int = self.frameCount % (LIQUID_DROP_SIZE * (LIQUID_DROP_INTERVAL - self.dropAccel))
-        if t < LIQUID_DROP_SIZE:
+        t: int = self.frameCount % (DROPLET_DROP_SIZE * DROPLET_DROP_INTERVAL)
+        if t < DROPLET_DROP_SIZE:
             if t == 0:
                 self.dropX = WIDTH - 1 - random.randrange(DIGIT_DISP_ZOOM * 4) - 1
                 self.liquidColorIndex = (self.liquidColorIndex + 1) % len(LIQUID_COLOR_QUEUE)
@@ -325,12 +335,17 @@ class BaseApp:
 
     def update(self, now: Optional[datetime] = None) -> None:
         """Update the simulation state by updating the field and colon."""
-        self.prev_fields.append([row[:] for row in self.field])
-        if len(self.prev_fields) > 2:
-            self.prev_fields.pop(0)
+        self.prevFields.append([row[:] for row in self.field])
+        if len(self.prevFields) > 2:
+            self.prevFields.pop(0)
+
         self.frameCount += 1
-        self.field_update(now)
-        self.update_colon(now)
+
+        if now is None:
+            now = datetime.now()
+
+        self.update_terrain(now)
+        self.update_droplets()
 
 
 # --- Pygame Version Class ---
@@ -372,9 +387,9 @@ class AppPygame(BaseApp):
         field_y: int = int((my - offset_y) / final_scale)
         if field_x < 0 or field_x >= WIDTH or field_y < 0 or field_y >= HEIGHT:
             return
-        if button == 3:  # Right-click: set to WALL_COLOR
+        if button == 1:  # Left-click: set to WALL_COLOR
             self.field[field_y][field_x] = WALL_COLOR
-        elif button == 1:  # Left-click: set to background (0)
+        elif button == 3:  # Right-click: set to background (0)
             self.field[field_y][field_x] = 0
 
     def draw(self) -> None:
@@ -386,7 +401,7 @@ class AppPygame(BaseApp):
             for x in range(WIDTH):
                 c: int = self.field[y][x]
                 if c == 0:
-                    for f in self.prev_fields[::-1]:
+                    for f in self.prevFields[::-1]:
                         if f[y][x] in LIQUID_COLORS:
                             c = f[y][x]
                 if c > 0:
@@ -515,7 +530,7 @@ class AppCurses(BaseApp):
             for x in range(WIDTH):
                 c: int = self.field[y][x]
                 if c == 0:
-                    for prev in reversed(self.prev_fields):
+                    for prev in reversed(self.prevFields):
                         if prev[y][x] in LIQUID_COLORS:
                             c = prev[y][x]
                             break
