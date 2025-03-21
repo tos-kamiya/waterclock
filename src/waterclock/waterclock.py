@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 from datetime import datetime, timedelta
 import random
@@ -16,9 +15,9 @@ DIGIT_DISP_ZOOM: int = 3
 WIDTH: int = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
 HEIGHT: int = 7 * DIGIT_DISP_ZOOM  # 21
 WALL_COLOR: int = 16
-SINKHOLE_OPENING_PERIOD: int = 50
+SINKHOLE_OPENING_PERIOD: int = 48
 LIQUID_MOVE_INTERVAL: int = 4
-LIQUID_SEP_INTERVAL: int = 120
+LIQUID_SEP_INTERVAL: int = 60
 LIQUID_DROP_SIZE: int = 2
 LIQUID_DROP_INTERVAL: int = 14
 
@@ -279,48 +278,42 @@ class BaseApp:
         if not self.dropMovePicks:
             picks: List[int] = []
             for i in range(LIQUID_MOVE_INTERVAL):
-                for _ in range(5):
-                    picks.append(i)
+                picks.extend([i] * 5)
             random.shuffle(picks)
             self.dropMovePicks = picks
+        move_pick: int = self.dropMovePicks.pop()
         if not self.dropSepPicks:
             picks = []
             for i in range(LIQUID_SEP_INTERVAL):
-                for _ in range(5):
-                    picks.append(i)
+                picks.extend([i] * 5)
             random.shuffle(picks)
             self.dropSepPicks = picks
-        dpMove: int = self.dropMovePicks.pop() if self.dropMovePicks else 0
-        dsPick: int = self.dropSepPicks.pop() if self.dropSepPicks else 0
-        dsPreferX: bool = random.randint(0, 1) == 0
+        sep_pick: int = self.dropSepPicks.pop()
 
         # Move droplets
         for y in range(HEIGHT, -1, -1):
             for x in range(1, WIDTH - 1):
-                if self.field[y][x] in LIQUID_COLORS:
-                    if y + 1 < len(self.field) and self.field[y + 1][x] <= 0:
-                        self.field[y + 1][x] = self.field[y][x]
-                        self.field[y][x] = 0
-                    elif y + 1 < len(self.field) and self.field[y + 1][x] in LIQUID_COLORS:
-                        if dsPreferX:
-                            if x + 1 < WIDTH and self.field[y + 1][x + 1] <= 0:
-                                self.field[y + 1][x + 1] = self.field[y][x]
-                                self.field[y][x] = 0
-                        else:
-                            if x - 1 >= 0 and self.field[y + 1][x - 1] <= 0:
-                                self.field[y + 1][x - 1] = self.field[y][x]
-                                self.field[y][x] = 0
                 c: int = self.field[y][x]
                 if c in LIQUID_COLORS:
-                    if (y + x) % LIQUID_MOVE_INTERVAL == dpMove:
-                        if self.field[y][x - 1] > 0 and self.field[y][x + 1] <= 0:
+                    if y + 1 < HEIGHT and self.field[y + 1][x] == 0:
+                        self.field[y + 1][x] = c
+                        self.field[y][x] = 0
+                    elif y + 1 < HEIGHT and self.field[y + 1][x] in LIQUID_COLORS:
+                        dx = x + random.choice([-1, 1])
+                        if self.field[y + 1][dx] == 0:
+                            self.field[y + 1][dx] = c
+                            self.field[y][x] = 0
+                c: int = self.field[y][x]
+                if c in LIQUID_COLORS:
+                    if (y + x) % LIQUID_MOVE_INTERVAL == move_pick:
+                        if self.field[y][x - 1] > 0 and self.field[y][x + 1] == 0:
                             self.field[y][x + 1] = c
                             self.field[y][x] = 0
-                        elif self.field[y][x + 1] > 0 and self.field[y][x - 1] <= 0:
+                        elif self.field[y][x + 1] > 0 and self.field[y][x - 1] == 0:
                             self.field[y][x - 1] = c
                             self.field[y][x] = 0
-                    elif (y + x) % LIQUID_SEP_INTERVAL == dsPick:
-                        liquid_separate(self.field, x, y, dsPreferX)
+                    elif (y + x) % LIQUID_SEP_INTERVAL == sep_pick:
+                        liquid_separate(self.field, x, y, random.randint(0, 1) == 0)
 
         # Generate new droplets
         t: int = self.frameCount % (LIQUID_DROP_SIZE * (LIQUID_DROP_INTERVAL - self.dropAccel))
