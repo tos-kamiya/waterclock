@@ -333,7 +333,15 @@ class BaseApp:
                 self.liquidColorIndex = (self.liquidColorIndex + 1) % len(LIQUID_COLOR_QUEUE)
             self.field[0][self.dropX] = LIQUID_COLOR_QUEUE[self.liquidColorIndex]
 
-    def update_by_cursor(self, cursor_pos: Tuple[int, int], cursor_move: Tuple[int, int]) -> None:
+    def update_terrain_by_cursor(self, cursor_pos: Tuple[int, int], button_clicked: int) -> None:
+        x, y = cursor_pos
+        if 0 <= x < WIDTH and 0 <= y < HEIGHT:
+            if button_clicked == 1:  # Left-click: set to WALL_COLOR
+                self.field[y][x] = WALL_COLOR
+            elif button_clicked == 3:  # Right-click: set to background (0)
+                self.field[y][x] = 0
+
+    def update_droplets_by_cursor(self, cursor_pos: Tuple[int, int], cursor_move: Tuple[int, int]) -> None:
         x, y = cursor_pos
         if 0 <= x < WIDTH and 0 <= y < HEIGHT and self.field[y][x] in LIQUID_COLORS:
             vx, vy = cursor_move
@@ -354,21 +362,26 @@ class BaseApp:
                         self.field[y][x], self.field[dy][dx] = self.field[dy][dx], self.field[y][x]
                         break  # for dx, dy
 
-    def update(self, now: Optional[datetime] = None, cursor_pos: Optional[Tuple[int, int]] = None, cursor_move: Optional[Tuple[int, int]] = None) -> None:
+    def update(
+            self, 
+            now: Optional[datetime] = None, 
+            cursor_pos: Optional[Tuple[int, int]] = None, 
+            cursor_move: Optional[Tuple[int, int]] = None, 
+            button_clicked: Optional[int] = None
+        ) -> None:
         """Update the simulation state by updating the field and colon,
-        optionally handling mouse pointer interactions.
+        optionally handling mouse pointer interactions and click events.
 
         Args:
-            now: The current datetime for simulation timing; if None, the current system time is used.
-            cursor_pos: Optional tuple (x, y) representing the current mouse pointer position.
-                    This can be used for hover interactions in the future.
-            cursor_move: Optional tuple (dx, dy) representing the mouse pointer movement direction.
+            now: The current datetime for simulation timing; if None, uses current system time.
+            cursor_pos: The current field coordinates of the mouse pointer.
+            cursor_move: The movement direction of the mouse pointer.
+            button_clicked: If not None, indicates the mouse button that was clicked
+                            (e.g. 1 for left-click, 3 for right-click). If None, no click occurred.
         """
-
         self.prevFields.append([row[:] for row in self.field])
         if len(self.prevFields) > 2:
             self.prevFields.pop(0)
-
         self.frameCount += 1
 
         if now is None:
@@ -377,8 +390,11 @@ class BaseApp:
         self.update_terrain(now)
         self.update_droplets()
 
-        if cursor_pos is not None and cursor_move is not None:
-            self.update_by_cursor(cursor_pos, cursor_move)
+        if cursor_pos is not None:
+            if button_clicked is not None:
+                self.update_terrain_by_cursor(cursor_pos, button_clicked)
+            elif cursor_move is not None:
+                self.update_droplets_by_cursor(cursor_pos, cursor_move)
 
 
 # --- Pygame Version Class ---
@@ -399,32 +415,6 @@ class AppPygame(BaseApp):
         width, height = self.screen.get_rect().size
         self.window_width = width
         self.window_height = height
-
-    def handle_mouse(self, pos: Tuple[int, int], button: int) -> None:
-        """Handle mouse click events to change cell states.
-
-        Right-click sets the cell to WALL_COLOR, left-click sets it to background (0).
-
-        Args:
-            pos: The (x, y) position of the mouse click.
-            button: The mouse button (1 for left, 3 for right).
-        """
-        final_scale: float = min(self.window_width / WIDTH, self.window_height / HEIGHT)
-        dest_width: int = int(WIDTH * final_scale)
-        dest_height: int = int(HEIGHT * final_scale)
-        offset_x: int = (self.window_width - dest_width) // 2
-        offset_y: int = (self.window_height - dest_height) // 2
-        mx, my = pos
-        if mx < offset_x or mx >= offset_x + dest_width or my < offset_y or my >= offset_y + dest_height:
-            return
-        field_x: int = int((mx - offset_x) / final_scale)
-        field_y: int = int((my - offset_y) / final_scale)
-        if field_x < 0 or field_x >= WIDTH or field_y < 0 or field_y >= HEIGHT:
-            return
-        if button == 1:  # Left-click: set to WALL_COLOR
-            self.field[field_y][field_x] = WALL_COLOR
-        elif button == 3:  # Right-click: set to background (0)
-            self.field[field_y][field_x] = 0
 
     def draw(self) -> None:
         """Draw the current simulation field using Pygame."""
@@ -450,6 +440,30 @@ class AppPygame(BaseApp):
         offset_y: int = (self.window_height - dest_height) // 2
         self.screen.blit(scaled_surface, (offset_x, offset_y))
 
+    def get_field_coordinates(self, raw_pos: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        """Convert raw screen coordinates to simulation field coordinates.
+
+        Args:
+            raw_pos: The (x, y) position on the window.
+
+        Returns:
+            A tuple (field_x, field_y) if the position is within the drawn area,
+            or None if the mouse is outside.
+        """
+        final_scale: float = min(self.window_width / WIDTH, self.window_height / HEIGHT)
+        dest_width: int = int(WIDTH * final_scale)
+        dest_height: int = int(HEIGHT * final_scale)
+        offset_x: int = (self.window_width - dest_width) // 2
+        offset_y: int = (self.window_height - dest_height) // 2
+        mx, my = raw_pos
+        if mx < offset_x or mx >= offset_x + dest_width or my < offset_y or my >= offset_y + dest_height:
+            return None
+        field_x: int = int((mx - offset_x) / final_scale)
+        field_y: int = int((my - offset_y) / final_scale)
+        if field_x < 0 or field_x >= WIDTH or field_y < 0 or field_y >= HEIGHT:
+            return None
+        return (field_x, field_y)
+
     def run(self, acceleration: int = 1) -> None:
         """Run the simulation using Pygame.
 
@@ -460,45 +474,38 @@ class AppPygame(BaseApp):
         clock = pygame.time.Clock()
         running: bool = True
         while running:
+            raw_mouse_pos: Optional[Tuple[int, int]] = None
+            clicked: Optional[int] = None
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.WINDOWRESIZED:
                     self.update_canvas_size()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    self.handle_mouse(event.pos, event.button)
+                    raw_mouse_pos = event.pos
+                    clicked = event.button
                 elif event.type == pygame.MOUSEMOTION:
+                    raw_mouse_pos = event.pos
                     if event.buttons[0]:
-                        self.handle_mouse(event.pos, 1)
+                        clicked = 1
                     if event.buttons[2]:
-                        self.handle_mouse(event.pos, 3)
+                        clicked = 3
 
-            # Convert raw mouse position to field coordinates.
-            final_scale: float = min(self.window_width / WIDTH, self.window_height / HEIGHT)
-            dest_width: int = int(WIDTH * final_scale)
-            dest_height: int = int(HEIGHT * final_scale)
-            offset_x: int = (self.window_width - dest_width) // 2
-            offset_y: int = (self.window_height - dest_height) // 2
-
-            raw_mouse_pos: Tuple[int, int] = pygame.mouse.get_pos()
-            dir: Optional[Tuple[int, int]] = None
-            if self.prev_raw_mouse_pos is not None:
-                dx = raw_mouse_pos[0] - self.prev_raw_mouse_pos[0]
-                dy = raw_mouse_pos[1] - self.prev_raw_mouse_pos[1]
-                if abs(dx) > abs(dy):
-                    dir = (-1 if dx < 0 else 1, 0)
-                elif abs(dy) > abs(dx):
-                    dir = (0, -1 if dy < 0 else 1)
-            mx, my = raw_mouse_pos
-            if (mx < offset_x or mx >= offset_x + dest_width or
-                    my < offset_y or my >= offset_y + dest_height):
-                pos: Optional[Tuple[int, int]] = None
-            else:
-                pos = (int((mx - offset_x) / final_scale), int((my - offset_y) / final_scale))
-            self.prev_raw_mouse_pos = raw_mouse_pos
+            move: Optional[Tuple[int, int]] = None
+            pos: Optional[Tuple[int, int]] = None
+            if raw_mouse_pos is not None:
+                if self.prev_raw_mouse_pos is not None:
+                    dx = raw_mouse_pos[0] - self.prev_raw_mouse_pos[0]
+                    dy = raw_mouse_pos[1] - self.prev_raw_mouse_pos[1]
+                    if abs(dx) > abs(dy):
+                        move = (-1 if dx < 0 else 1, 0)
+                    elif abs(dy) > abs(dx):
+                        move = (0, -1 if dy < 0 else 1)
+                pos = self.get_field_coordinates(raw_mouse_pos)
+                self.prev_raw_mouse_pos = raw_mouse_pos
 
             if acceleration == 1:
-                self.update(cursor_pos=pos, cursor_move=dir)
+                self.update(cursor_pos=pos, cursor_move=move, button_clicked=clicked)
                 self.draw()
                 pygame.display.flip()
                 clock.tick(20)
@@ -507,7 +514,7 @@ class AppPygame(BaseApp):
                 elapsed: timedelta = datetime.now() - start_time
                 simulated_seconds: float = elapsed.total_seconds() * acceleration
                 simulated_time: datetime = start_time + timedelta(seconds=simulated_seconds)
-                self.update(simulated_time, cursor_pos=pos, cursor_move=dir)
+                self.update(simulated_time, cursor_pos=pos, cursor_move=move, button_clicked=clicked)
                 self.draw()
                 pygame.display.flip()
                 clock.tick(20 * acceleration)
