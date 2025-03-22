@@ -14,15 +14,13 @@ except ImportError:
 DIGIT_DISP_ZOOM: int = 3
 WIDTH: int = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
 HEIGHT: int = 7 * DIGIT_DISP_ZOOM  # 21
-WALL_COLOR: int = 16
 SINKHOLE_OPENING_PERIOD: int = 48
 DROPLET_MOVE_INTERVAL: int = 4
 DROPLET_SWAP_INTERVAL: int = 60
 DROPLET_DROP_SIZE: int = 2
 DROPLET_DROP_INTERVAL: int = 14
 
-LIQUID_COLOR_POPULATION: Dict[int, int] = {8: 150, 10: 850, 11: 1}
-LIQUID_COLORS: List[int] = list(LIQUID_COLOR_POPULATION.keys())
+LIQUID_COLOR_POPULATION: Dict[int, int] = {8: 150, 9: 850, 10: 1}
 LIQUID_COLOR_QUEUE: List[int] = []
 for c, p in LIQUID_COLOR_POPULATION.items():
     LIQUID_COLOR_QUEUE.extend([c] * p)
@@ -31,12 +29,22 @@ random.shuffle(LIQUID_COLOR_QUEUE)
 # PALETTE (for pygame: RGB)
 PALETTE: Dict[int, Tuple[int, int, int]] = {
     0: (0xC0, 0xC0, 0xC0),  # Background
-    8: (0x84, 0xC2, 0xDA),  # Water 1
-    9: (0x81, 0xB8, 0xCF),  # Water 2
-    10: (0x4C, 0xA4, 0xC4),  # Water 3
-    11: (0xF3, 0x8C, 0x79),  # Water 4
+
+    8: (0x84, 0xC2, 0xDA),  # blue 1
+    9: (0x4C, 0xA4, 0xC4),  # blue 2
+    10: (0xF3, 0x8C, 0x79),  # orange
+
+    11: (0x89, 0xC4, 0xC7),  # green 1
+    12: (0x84, 0xCE, 0xD1),  # green 2
+    13: (0xF0, 0xEC, 0x00),  # yellow
+
     16: (0x20, 0x20, 0x20),  # Wall
 }
+
+WALL_COLOR: int = 16
+LIQUID_COLOR_MIN: int = 8
+LIQUID_COLOR_MAX: int = 13
+LIQUID_COLOR_TIME_SHIFT = 3
 
 # Digit pattern strings (for 0 to 9)
 DIGIT_BITMAP_STRINGS: List[str] = [
@@ -69,6 +77,10 @@ COLON_Y2: int = 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
 
 
 # --- Utility Functions ---
+def is_liquid_color(c: int) -> bool:
+    return LIQUID_COLOR_MIN <= c <= LIQUID_COLOR_MAX
+
+
 def create_field() -> List[List[int]]:
     """Create the simulation field.
 
@@ -168,7 +180,7 @@ def droplet_go_down(field: List[List[int]], x: int, y: int) -> bool:
         True if the droplet moved, False otherwise.
     """
     c: int = field[y][x]
-    if c not in LIQUID_COLORS:
+    if not is_liquid_color(c):
         return False
     if y >= HEIGHT:
         return False
@@ -177,7 +189,7 @@ def droplet_go_down(field: List[List[int]], x: int, y: int) -> bool:
         field[y + 1][x] = c
         field[y][x] = 0
         return True
-    elif y + 1 < HEIGHT and field[y + 1][x] in LIQUID_COLORS:
+    elif y + 1 < HEIGHT and is_liquid_color(field[y + 1][x]):
         dx = x + random.choice([-1, 1])
         if field[y + 1][dx] == 0:
             field[y + 1][dx] = c
@@ -199,7 +211,7 @@ def droplet_swap(field: List[List[int]], x: int, y: int, prefer_x: bool) -> bool
         prefer_x: Whether to prefer horizontal movement over vertical.
     """
     c: int = field[y][x]
-    if c not in LIQUID_COLORS:
+    if not is_liquid_color(c):
         return False
 
     wx: int = 0
@@ -221,17 +233,17 @@ def droplet_swap(field: List[List[int]], x: int, y: int, prefer_x: bool) -> bool
     wx = max(-1, min(1, wx))
     wy = max(-1, min(1, wy))
     if prefer_x:
-        if wx != 0 and field[y][x + wx] in LIQUID_COLORS:
+        if wx != 0 and is_liquid_color(field[y][x + wx]):
             field[y][x], field[y][x + wx] = field[y][x + wx], field[y][x]
             return True
-        elif wy != 0 and field[y + wy][x] in LIQUID_COLORS:
+        elif wy != 0 and is_liquid_color(field[y + wy][x]):
             field[y][x], field[y + wy][x] = field[y + wy][x], field[y][x]
             return True
     else:
-        if wy != 0 and field[y + wy][x] in LIQUID_COLORS:
+        if wy != 0 and is_liquid_color(field[y + wy][x]):
             field[y][x], field[y + wy][x] = field[y + wy][x], field[y][x]
             return True
-        elif wx != 0 and field[y][x + wx] in LIQUID_COLORS:
+        elif wx != 0 and is_liquid_color(field[y][x + wx]):
             field[y][x], field[y][x + wx] = field[y][x + wx], field[y][x]
             return True
     return False
@@ -252,7 +264,7 @@ def droplet_move(field: List[List[int]], x: int, y: int) -> bool:
         bool: True if the droplet moved, False otherwise.
     """
     c: int = field[y][x]
-    if c not in LIQUID_COLORS:
+    if not is_liquid_color(c):
         return False
 
     if x - 1 >= 0 and field[y][x - 1] > 0 and field[y][x + 1] == 0:
@@ -347,8 +359,11 @@ class BaseApp:
                 for p in self.digitUpdatedPoss:
                     put_digit(self.field, p, self.dispDigits[p])
 
-    def update_droplets(self) -> None:
+    def update_droplets(self, now: datetime) -> None:
         """Update the state of the droplets in the simulation.
+
+        Args:
+            now: The current datetime for simulation timing.
 
         This function handles:
         - Removing droplets that have reached the edges of the field.
@@ -357,12 +372,12 @@ class BaseApp:
         """
         # Remove droplets at the edges of the field
         for y in range(HEIGHT):
-            if self.field[y][0] in LIQUID_COLORS:
+            if is_liquid_color(self.field[y][0]):
                 self.field[y][0] = 0
-            if self.field[y][WIDTH - 1] in LIQUID_COLORS:
+            if is_liquid_color(self.field[y][WIDTH - 1]):
                 self.field[y][WIDTH - 1] = 0
         for x in range(WIDTH):
-            if self.field[HEIGHT][x] == 0 and self.field[HEIGHT - 1][x] in LIQUID_COLORS:
+            if self.field[HEIGHT][x] == 0 and is_liquid_color(self.field[HEIGHT - 1][x]):
                 self.field[HEIGHT - 1][x] = 0
 
         # Move droplets
@@ -370,7 +385,7 @@ class BaseApp:
         swap_pick = pop_pick(self.dropSwapPicks, DROPLET_SWAP_INTERVAL)
         for y in range(HEIGHT, -1, -1):
             for x in range(1, WIDTH - 1):
-                (
+                _ = (
                     droplet_go_down(self.field, x, y)
                     or (y + x) % DROPLET_MOVE_INTERVAL == move_pick
                     and droplet_move(self.field, x, y)
@@ -381,10 +396,11 @@ class BaseApp:
         # Generate new droplets
         t: int = self.frameCount % (DROPLET_DROP_SIZE * DROPLET_DROP_INTERVAL)
         if t < DROPLET_DROP_SIZE:
+            color_shift = LIQUID_COLOR_TIME_SHIFT if 5 <= now.hour < 15 else 0
             if t == 0:
                 self.dropX = WIDTH - 1 - random.randrange(DIGIT_DISP_ZOOM * 4) - 1
                 self.liquidColorIndex = (self.liquidColorIndex + 1) % len(LIQUID_COLOR_QUEUE)
-            self.field[0][self.dropX] = LIQUID_COLOR_QUEUE[self.liquidColorIndex]
+            self.field[0][self.dropX] = LIQUID_COLOR_QUEUE[self.liquidColorIndex] + color_shift
 
     def update_terrain_by_cursor(self, cursor_pos: Tuple[int, int], button_clicked: int) -> None:
         """Update the terrain based on cursor interaction.
@@ -416,7 +432,7 @@ class BaseApp:
             cursor_move:  The (dx,dy) movement of the cursor.
         """
         x, y = cursor_pos
-        if 0 <= x < WIDTH and 0 <= y < HEIGHT and self.field[y][x] in LIQUID_COLORS:
+        if 0 <= x < WIDTH and 0 <= y < HEIGHT and is_liquid_color(self.field[y][x]):
             vx, vy = cursor_move
             dx, dy = x + vx, y + vy
             if 0 <= dx < WIDTH and 0 <= dy < HEIGHT and self.field[dy][dx] == 0:
@@ -431,7 +447,7 @@ class BaseApp:
                     assert False
                 random.shuffle(dests)
                 for dx, dy in dests:
-                    if 0 <= dx < WIDTH and 0 <= dy < HEIGHT and self.field[dy][dx] in LIQUID_COLORS:
+                    if 0 <= dx < WIDTH and 0 <= dy < HEIGHT and is_liquid_color(self.field[dy][dx]):
                         self.field[y][x], self.field[dy][dx] = self.field[dy][dx], self.field[y][x]
                         break  # for dx, dy
 
@@ -461,7 +477,7 @@ class BaseApp:
             now = datetime.now()
 
         self.update_terrain(now)
-        self.update_droplets()
+        self.update_droplets(now)
 
         if cursor_pos is not None:
             if button_clicked is not None:
@@ -499,7 +515,7 @@ class AppPygame(BaseApp):
                 c: int = self.field[y][x]
                 if c == 0:
                     for f in self.prevFields[::-1]:
-                        if f[y][x] in LIQUID_COLORS:
+                        if is_liquid_color(f[y][x]):
                             c = f[y][x]
                 if c > 0:
                     color: Tuple[int, int, int] = PALETTE.get(c, (255, 255, 255))
@@ -616,12 +632,19 @@ class AppCurses(BaseApp):
         # Simple color mapping (simulation color -> curses color)
         self.color_map: Dict[int, Tuple[int, int]] = {
             0: (curses_module.COLOR_WHITE, curses_module.COLOR_WHITE),
+
             8: (curses_module.COLOR_CYAN, curses_module.COLOR_CYAN),
             9: (curses_module.COLOR_BLUE, curses_module.COLOR_BLUE),
-            10: (curses_module.COLOR_BLUE, curses_module.COLOR_BLUE),
-            11: (curses_module.COLOR_RED, curses_module.COLOR_RED),
+            10: (curses_module.COLOR_RED, curses_module.COLOR_RED),
+
+            11: (curses_module.COLOR_CYAN, curses_module.COLOR_CYAN),
+            12: (curses_module.COLOR_BLUE, curses_module.COLOR_BLUE),
+            13: (curses_module.COLOR_YELLOW, curses_module.COLOR_YELLOW),
+
             16: (curses_module.COLOR_BLACK, curses_module.COLOR_BLACK),
         }
+        assert all(c in self.color_map for c in PALETTE.keys())
+
         self.color_pairs: Dict[int, Any] = {}
         pair_number: int = 1
         for sim_color, (fg, bg) in self.color_map.items():
@@ -657,7 +680,7 @@ class AppCurses(BaseApp):
                 c: int = self.field[y][x]
                 if c == 0:
                     for prev in reversed(self.prevFields):
-                        if prev[y][x] in LIQUID_COLORS:
+                        if is_liquid_color(prev[y][x]):
                             c = prev[y][x]
                             break
                 attr = self.color_pairs.get(c, curses.A_NORMAL)
