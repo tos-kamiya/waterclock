@@ -12,9 +12,11 @@ except ImportError:
 
 # --- Constants ---
 DIGIT_DISP_ZOOM: int = 3
-WIDTH: int = (1 + 4 * 4) * DIGIT_DISP_ZOOM  # 51
+THRUHOLE_WIDTH = 4
+WIDTH: int = (1 + 4 * 4) * DIGIT_DISP_ZOOM + THRUHOLE_WIDTH  # 55
 HEIGHT: int = 7 * DIGIT_DISP_ZOOM  # 21
-SINKHOLE_OPENING_PERIOD: int = 48
+SINKHOLE_OPENING_PERIOD: int = 65
+SINKHOLE_UPPER_DIGIT_DELAY: int = 5
 DROPLET_MOVE_INTERVAL: int = 4
 DROPLET_SWAP_INTERVAL: int = 60
 DROPLET_DROP_SIZE: int = 2
@@ -105,11 +107,21 @@ def create_field() -> List[List[int]]:
     field[COLON_Y1][COLON_X] = 0
     field[COLON_Y2][COLON_X] = 0
 
+    # Draw holes in digit display
     for pos in range(4):
         for dx, dy in DIGIT_PIXELS_ALWAYS_ON:
             for y in range((1 + dy) * DIGIT_DISP_ZOOM, (1 + dy + 1) * DIGIT_DISP_ZOOM):
                 for x in range((1 + pos * 4 + dx) * DIGIT_DISP_ZOOM, (1 + pos * 4 + dx + 1) * DIGIT_DISP_ZOOM):
                     field[y][x] = 0
+
+    # Draw thru hole
+    x = (1 + 4 * 4) * DIGIT_DISP_ZOOM
+    for y in range(DIGIT_DISP_ZOOM, DIGIT_DISP_ZOOM * 7):
+        if y % 4 != 1:
+            field[y][x] = 0
+            field[y][x + 2] = 0
+        if y % 4 != 3:
+            field[y][x + 1] = 0
 
     return field
 
@@ -353,11 +365,10 @@ class BaseApp:
                     put_sinkhole(self.field, p)
                     self.digitUpdatedPoss.append(p)
             self.dispDigits = ds
-        if self.sinkholeCounter >= 0:
-            self.sinkholeCounter -= 1
-            if self.sinkholeCounter == 0:
-                for p in self.digitUpdatedPoss:
-                    put_digit(self.field, p, self.dispDigits[p])
+        self.sinkholeCounter -= 1
+        for p in self.digitUpdatedPoss:
+            if self.sinkholeCounter == p * SINKHOLE_UPPER_DIGIT_DELAY:
+                put_digit(self.field, p, self.dispDigits[p])
 
     def update_droplets(self, now: datetime) -> None:
         """Update the state of the droplets in the simulation.
@@ -398,7 +409,7 @@ class BaseApp:
         if t < DROPLET_DROP_SIZE:
             color_shift = LIQUID_COLOR_TIME_SHIFT if 5 <= now.hour < 15 else 0
             if t == 0:
-                self.dropX = WIDTH - 1 - random.randrange(DIGIT_DISP_ZOOM * 4) - 1
+                self.dropX = WIDTH - THRUHOLE_WIDTH - 1 - random.randrange(DIGIT_DISP_ZOOM * 4) - 1
                 self.liquidColorIndex = (self.liquidColorIndex + 1) % len(LIQUID_COLOR_QUEUE)
             self.field[0][self.dropX] = LIQUID_COLOR_QUEUE[self.liquidColorIndex] + color_shift
 
@@ -561,6 +572,7 @@ class AppPygame(BaseApp):
         """
         pygame = self.pygame
         clock = pygame.time.Clock()
+        start_time: datetime = datetime.now()
         running: bool = True
         while running:
             raw_mouse_pos: Optional[Tuple[int, int]] = None
@@ -599,7 +611,6 @@ class AppPygame(BaseApp):
                 pygame.display.flip()
                 clock.tick(20)
             else:
-                start_time: datetime = datetime.now()
                 elapsed: timedelta = datetime.now() - start_time
                 simulated_seconds: float = elapsed.total_seconds() * acceleration
                 simulated_time: datetime = start_time + timedelta(seconds=simulated_seconds)
