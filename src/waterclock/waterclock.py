@@ -1,4 +1,5 @@
 import argparse
+import colorsys
 from datetime import datetime, timedelta
 import random
 import sys
@@ -11,42 +12,20 @@ except ImportError:
     __version__ = "(unknown)"
 
 # --- Constants ---
-DIGIT_DISP_ZOOM: int = 3
+DIGIT_PIXEL_SIZE: int = 3
 THRUHOLE_WIDTH = 4
-WIDTH: int = (1 + 4 * 4) * DIGIT_DISP_ZOOM + THRUHOLE_WIDTH  # 55
-HEIGHT: int = 7 * DIGIT_DISP_ZOOM  # 21
-SINKHOLE_OPENING_PERIOD: int = 65
-SINKHOLE_UPPER_DIGIT_DELAY: int = 5
+WIDTH: int = (1 + 4 * 4) * DIGIT_PIXEL_SIZE + THRUHOLE_WIDTH
+HEIGHT: int = 7 * DIGIT_PIXEL_SIZE
+
+SINKHOLE_OPENING_PERIOD: int = 35
+SINKHOLE_EXTENSION: Dict[int, int] = {0: 4, 1: 7, 2: -3, 4: 6, 6: 1, 7: 2, 8: 1, 9: 3}
 DROPLET_MOVE_INTERVAL: int = 4
 DROPLET_SWAP_INTERVAL: int = 60
 DROPLET_DROP_SIZE: int = 2
 DROPLET_DROP_INTERVAL: int = 14
 
-LIQUID_COLOR_POPULATION: Dict[int, int] = {8: 150, 9: 850, 10: 1}
-LIQUID_COLOR_QUEUE: List[int] = []
-for c, p in LIQUID_COLOR_POPULATION.items():
-    LIQUID_COLOR_QUEUE.extend([c] * p)
-random.shuffle(LIQUID_COLOR_QUEUE)
-
-# PALETTE (for pygame: RGB)
-PALETTE: Dict[int, Tuple[int, int, int]] = {
-    0: (0xC0, 0xC0, 0xC0),  # Background
-
-    8: (0x84, 0xC2, 0xDA),  # blue 1
-    9: (0x4C, 0xA4, 0xC4),  # blue 2
-    10: (0xF3, 0x8C, 0x79),  # orange
-
-    11: (0x89, 0xC4, 0xC7),  # green 1
-    12: (0x84, 0xCE, 0xD1),  # green 2
-    13: (0xF0, 0xEC, 0x00),  # yellow
-
-    16: (0x20, 0x20, 0x20),  # Wall
-}
-
-WALL_COLOR: int = 16
-LIQUID_COLOR_MIN: int = 8
-LIQUID_COLOR_MAX: int = 13
-LIQUID_COLOR_TIME_SHIFT = 3
+COLOR_WALL: int = 99
+COLOR_BACKGROUND: int = 0
 
 # Digit pattern strings (for 0 to 9)
 DIGIT_BITMAP_STRINGS: List[str] = [
@@ -72,15 +51,44 @@ DIGIT_PIXELS_ALWAYS_OFF: List[Tuple[int, int]] = [
 ]
 DIGIT_PIXELS_UNCHANGED: List[Tuple[int, int]] = DIGIT_PIXELS_ALWAYS_ON + DIGIT_PIXELS_ALWAYS_OFF
 
-# Colon drawing positions (separator between hour and minute)
-COLON_X: int = 2 * 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
-COLON_Y1: int = 2 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
-COLON_Y2: int = 4 * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM // 2
-
-
 # --- Utility Functions ---
+def modify_v(rgb: Tuple[int, int, int], v_add: float) -> Tuple[int, int, int]:
+    assert -1.0 <= v_add <= 1.0
+
+    r, g, b = rgb
+    assert 0 <= r < 255
+    assert 0 <= g < 255
+    assert 0 <= b < 255
+
+    rgb_01 = (r / 255, g / 255, b / 255)  # Normalize RGB to 0-1 range
+    hsv = colorsys.rgb_to_hsv(*rgb_01)
+
+    new_v = hsv[2] + v_add
+    new_hsv = (hsv[0], hsv[1], max(0.0, min(1.0, new_v)))
+
+    new_rgb_01 = colorsys.hsv_to_rgb(*new_hsv)
+    new_rgb = int(new_rgb_01[0] * 255), int(new_rgb_01[1] * 255), int(new_rgb_01[2] * 255)
+
+    return new_rgb
+
+
 def is_liquid_color(c: int) -> bool:
-    return LIQUID_COLOR_MIN <= c <= LIQUID_COLOR_MAX
+    return c != COLOR_BACKGROUND and c != COLOR_WALL
+
+
+def put_colon(field: List[List[int]], put_wall: bool):
+    COLON_X: int = 2 * 4 * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE // 2
+    COLON_Y1: int = 2 * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE // 2
+    COLON_Y2: int = 4 * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE // 2
+
+    if put_wall:
+        for y in [COLON_Y1, COLON_Y2]:
+            if field[y][COLON_X] != COLOR_WALL:
+                field[y][COLON_X] = COLOR_WALL
+    else:
+        for y in [COLON_Y1, COLON_Y2]:
+            if field[y][COLON_X] == COLOR_WALL:
+                field[y][COLON_X] = COLOR_BACKGROUND
 
 
 def create_field() -> List[List[int]]:
@@ -94,34 +102,33 @@ def create_field() -> List[List[int]]:
         A 2D list of integers representing the field.
     """
     field: List[List[int]] = []
-    # Upper part: DIGIT_DISP_ZOOM rows as background (0)
-    for y in range(1 * DIGIT_DISP_ZOOM):
-        field.append([0] * WIDTH)
+    # Upper part: DIGIT_DISP_ZOOM rows as background
+    for y in range(1 * DIGIT_PIXEL_SIZE):
+        field.append([COLOR_BACKGROUND] * WIDTH)
     # Middle part: rows from DIGIT_DISP_ZOOM to HEIGHT as wall color
-    for y in range(DIGIT_DISP_ZOOM, HEIGHT):
-        field.append([WALL_COLOR] * WIDTH)
-    # Bottom row: background (0)
-    field.append([0] * WIDTH)
+    for y in range(DIGIT_PIXEL_SIZE, HEIGHT):
+        field.append([COLOR_WALL] * WIDTH)
+    # Bottom row: background
+    field.append([COLOR_BACKGROUND] * WIDTH)
 
-    # Initially, draw the colon as background (0)
-    field[COLON_Y1][COLON_X] = 0
-    field[COLON_Y2][COLON_X] = 0
+    # Initially, draw the colon as background
+    put_colon(field, False)
 
     # Draw holes in digit display
     for pos in range(4):
         for dx, dy in DIGIT_PIXELS_ALWAYS_ON:
-            for y in range((1 + dy) * DIGIT_DISP_ZOOM, (1 + dy + 1) * DIGIT_DISP_ZOOM):
-                for x in range((1 + pos * 4 + dx) * DIGIT_DISP_ZOOM, (1 + pos * 4 + dx + 1) * DIGIT_DISP_ZOOM):
-                    field[y][x] = 0
+            for y in range((1 + dy) * DIGIT_PIXEL_SIZE, (1 + dy + 1) * DIGIT_PIXEL_SIZE):
+                for x in range((1 + pos * 4 + dx) * DIGIT_PIXEL_SIZE, (1 + pos * 4 + dx + 1) * DIGIT_PIXEL_SIZE):
+                    field[y][x] = COLOR_BACKGROUND
 
     # Draw thru hole
-    x = (1 + 4 * 4) * DIGIT_DISP_ZOOM
-    for y in range(DIGIT_DISP_ZOOM, DIGIT_DISP_ZOOM * 7):
+    x = (1 + 4 * 4) * DIGIT_PIXEL_SIZE
+    for y in range(DIGIT_PIXEL_SIZE, DIGIT_PIXEL_SIZE * 7):
         if y % 4 != 1:
-            field[y][x] = 0
-            field[y][x + 2] = 0
+            field[y][x] = COLOR_BACKGROUND
+            field[y][x + 2] = COLOR_BACKGROUND
         if y % 4 != 3:
-            field[y][x + 1] = 0
+            field[y][x + 1] = COLOR_BACKGROUND
 
     return field
 
@@ -133,10 +140,11 @@ def put_sinkhole(field: List[List[int]], pos: int) -> None:
         field: The simulation field.
         pos: The digit position (0-3) to update.
     """
-    x = (pos * 4 + 3) * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM - 2
-    for y in range(6 * DIGIT_DISP_ZOOM, 7 * DIGIT_DISP_ZOOM):
-        if field[y][x] == WALL_COLOR:
-            field[y][x] = 0
+    xs = [(pos * 4 + 1) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2, (pos * 4 + 3) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2]
+    for y in range(6 * DIGIT_PIXEL_SIZE, 7 * DIGIT_PIXEL_SIZE):
+        for x in xs:
+            if field[y][x] == COLOR_WALL:
+                field[y][x] = COLOR_BACKGROUND
 
 
 def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
@@ -155,15 +163,16 @@ def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
         for dx in range(3):
             if (dx, dy) in DIGIT_PIXELS_UNCHANGED:
                 continue
-            for y in range((1 + dy) * DIGIT_DISP_ZOOM, (1 + dy + 1) * DIGIT_DISP_ZOOM):
-                for x in range((1 + pos * 4 + dx) * DIGIT_DISP_ZOOM, (1 + pos * 4 + dx + 1) * DIGIT_DISP_ZOOM):
-                    if field[y][x] == WALL_COLOR:
-                        field[y][x] = 0
+            for y in range((1 + dy) * DIGIT_PIXEL_SIZE, (1 + dy + 1) * DIGIT_PIXEL_SIZE):
+                for x in range((1 + pos * 4 + dx) * DIGIT_PIXEL_SIZE, (1 + pos * 4 + dx + 1) * DIGIT_PIXEL_SIZE):
+                    if field[y][x] == COLOR_WALL:
+                        field[y][x] = COLOR_BACKGROUND
 
     # Overwrite the bottom row with wall color
-    x = (pos * 4 + 3) * DIGIT_DISP_ZOOM + DIGIT_DISP_ZOOM - 2
-    for y in range(6 * DIGIT_DISP_ZOOM, 7 * DIGIT_DISP_ZOOM):
-        field[y][x] = WALL_COLOR
+    xs = [(pos * 4 + 1) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2, (pos * 4 + 3) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2]
+    for y in range(6 * DIGIT_PIXEL_SIZE, 7 * DIGIT_PIXEL_SIZE):
+        for x in xs:
+            field[y][x] = COLOR_WALL
 
     # Reflect the digit pattern (set wall color where the pattern has "0")
     db = DIGIT_BITMAPS[digit]
@@ -171,10 +180,10 @@ def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
         for dx in range(3):
             if (dx, dy) in DIGIT_PIXELS_UNCHANGED:
                 continue
-            if db[dy][dx] == 0:
-                for y in range((1 + dy) * DIGIT_DISP_ZOOM, (1 + dy + 1) * DIGIT_DISP_ZOOM):
-                    for x in range((1 + pos * 4 + dx) * DIGIT_DISP_ZOOM, (1 + pos * 4 + dx + 1) * DIGIT_DISP_ZOOM):
-                        field[y][x] = WALL_COLOR
+            if db[dy][dx] == COLOR_BACKGROUND:
+                for y in range((1 + dy) * DIGIT_PIXEL_SIZE, (1 + dy + 1) * DIGIT_PIXEL_SIZE):
+                    for x in range((1 + pos * 4 + dx) * DIGIT_PIXEL_SIZE, (1 + pos * 4 + dx + 1) * DIGIT_PIXEL_SIZE):
+                        field[y][x] = COLOR_WALL
 
 
 def droplet_go_down(field: List[List[int]], x: int, y: int) -> bool:
@@ -197,20 +206,26 @@ def droplet_go_down(field: List[List[int]], x: int, y: int) -> bool:
     if y >= HEIGHT:
         return False
 
-    if y + 1 < HEIGHT and field[y + 1][x] == 0:
+    if y + 1 < HEIGHT and field[y + 1][x] == COLOR_BACKGROUND:
         field[y + 1][x] = c
-        field[y][x] = 0
+        field[y][x] = COLOR_BACKGROUND
         return True
     elif y + 1 < HEIGHT and is_liquid_color(field[y + 1][x]):
         dx = x + random.choice([-1, 1])
-        if field[y + 1][dx] == 0:
-            field[y + 1][dx] = c
-            field[y][x] = 0
-            return True
+        if field[y + 1][dx] == COLOR_BACKGROUND:
+            if field[y][dx] == COLOR_BACKGROUND:
+                field[y + 1][dx] = c
+                field[y][x] = COLOR_BACKGROUND
+                return True
+            elif is_liquid_color(field[y + 1][x]):
+                field[y + 1][dx] = field[y + 1][x]
+                field[y + 1][x] = c
+                field[y][x] = COLOR_BACKGROUND
+                return True
     return False
 
 
-def droplet_swap(field: List[List[int]], x: int, y: int, prefer_x: bool) -> bool:
+def droplet_swap(field: List[List[int]], x: int, y: int) -> bool:
     """Swap movement of liquid droplets.
 
     Calculates a weighted displacement based on neighboring cells and
@@ -222,43 +237,41 @@ def droplet_swap(field: List[List[int]], x: int, y: int, prefer_x: bool) -> bool
         y: The y-coordinate of the droplet.
         prefer_x: Whether to prefer horizontal movement over vertical.
     """
+    def count_same_droplets(x: int, y: int):
+        c: int = field[y][x]
+        vxvys = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        same_liquids = 0
+        for vx, vy in vxvys:
+            dx, dy = x + vx, y + vy
+            dc = field[dy][dx]
+            if dc == c:
+                same_liquids += 1
+        return same_liquids
+
     c: int = field[y][x]
     if not is_liquid_color(c):
         return False
 
-    wx: int = 0
-    wy: int = 0
-    for dy in range(-2, 3):
-        yy: int = y + dy
-        if yy < 0 or yy >= HEIGHT:
-            continue
-        for dx in range(-2, 3):
-            xx: int = x + dx
-            if xx < 0 or xx >= WIDTH:
-                continue
-            dist: int = abs(dx) + abs(dy)
-            if not (1 <= dist <= 3):
-                continue
-            if field[yy][xx] == c:
-                wx += dx
-                wy += dy
-    wx = max(-1, min(1, wx))
-    wy = max(-1, min(1, wy))
-    if prefer_x:
-        if wx != 0 and is_liquid_color(field[y][x + wx]):
-            field[y][x], field[y][x + wx] = field[y][x + wx], field[y][x]
-            return True
-        elif wy != 0 and is_liquid_color(field[y + wy][x]):
-            field[y][x], field[y + wy][x] = field[y + wy][x], field[y][x]
-            return True
+    if random.randrange(2) == 0:
+        dx, dy = x + random.choice([-1, 1]), y
     else:
-        if wy != 0 and is_liquid_color(field[y + wy][x]):
-            field[y][x], field[y + wy][x] = field[y + wy][x], field[y][x]
-            return True
-        elif wx != 0 and is_liquid_color(field[y][x + wx]):
-            field[y][x], field[y][x + wx] = field[y][x + wx], field[y][x]
-            return True
-    return False
+        dx, dy = x, y + random.choice([-1, 1])
+    if not (0 <= dx < WIDTH and 0 <= dy < HEIGHT):
+        return False
+
+    dc: int = field[dy][dx]
+    if not is_liquid_color(dc) or dc == c:
+        return False
+
+    s = count_same_droplets(x, y)
+
+    field[y][x], field[dy][dx] = dc, c
+
+    s2 = count_same_droplets(x, y)
+    if s2 < s:
+        field[y][x], field[dy][dx] = c, dc
+
+    return True
 
 
 def droplet_move(field: List[List[int]], x: int, y: int) -> bool:
@@ -275,17 +288,20 @@ def droplet_move(field: List[List[int]], x: int, y: int) -> bool:
     Returns:
         bool: True if the droplet moved, False otherwise.
     """
+    if not (0 <= x - 1 and x + 1 < WIDTH):
+        return False
+
     c: int = field[y][x]
     if not is_liquid_color(c):
         return False
 
-    if x - 1 >= 0 and field[y][x - 1] > 0 and field[y][x + 1] == 0:
+    if field[y][x - 1] != COLOR_BACKGROUND and field[y][x + 1] == COLOR_BACKGROUND:
         field[y][x + 1] = c
-        field[y][x] = 0
+        field[y][x] = COLOR_BACKGROUND
         return True
-    elif x + 1 < WIDTH and field[y][x + 1] > 0 and field[y][x - 1] == 0:
+    elif field[y][x + 1] != COLOR_BACKGROUND and field[y][x - 1] == COLOR_BACKGROUND:
         field[y][x - 1] = c
-        field[y][x] = 0
+        field[y][x] = COLOR_BACKGROUND
         return True
     return False
 
@@ -324,7 +340,6 @@ class BaseApp:
         self.dropMovePicks: List[int] = []
         self.dropSwapPicks: List[int] = []
         self.dropX: int = 0
-        self.liquidColorIndex: int = 0
         self.frameCount: int = 0
 
         now: datetime = datetime.now()
@@ -343,16 +358,7 @@ class BaseApp:
         Args:
             now: The current datetime for simulation timing.
         """
-        if now.second % 6 < 3:
-            # If in the first 3 seconds of a 6-second period, draw the colon with WALL_COLOR.
-            for y in [COLON_Y1, COLON_Y2]:
-                if self.field[y][COLON_X] != WALL_COLOR:
-                    self.field[y][COLON_X] = WALL_COLOR
-        else:
-            # Otherwise, clear the colon (set to background 0).
-            for y in [COLON_Y1, COLON_Y2]:
-                if self.field[y][COLON_X] == WALL_COLOR:
-                    self.field[y][COLON_X] = 0
+        put_colon(self.field, now.second % 6 < 3)
 
         h: int = now.hour
         m: int = now.minute
@@ -364,11 +370,17 @@ class BaseApp:
                 if ds[p] != self.dispDigits[p]:
                     put_sinkhole(self.field, p)
                     self.digitUpdatedPoss.append(p)
+                    if p == 1 and ds[p] == 5:  # The tens digit will flash when the units digit of the time is 5.
+                        put_sinkhole(self.field, 0)
+                        self.digitUpdatedPoss.append(0)
             self.dispDigits = ds
         self.sinkholeCounter -= 1
         for p in self.digitUpdatedPoss:
-            if self.sinkholeCounter == p * SINKHOLE_UPPER_DIGIT_DELAY:
+            if self.sinkholeCounter == -SINKHOLE_EXTENSION.get(ds[p], 0):
                 put_digit(self.field, p, self.dispDigits[p])
+
+    def pick_liquid_color(self, now: datetime) -> int:
+        raise NotImplementedError()
 
     def update_droplets(self, now: datetime) -> None:
         """Update the state of the droplets in the simulation.
@@ -381,15 +393,17 @@ class BaseApp:
         - Moving droplets down, sideways, and swapping their positions.
         - Generating new droplets at the top of the field.
         """
+        field = self.field
+
         # Remove droplets at the edges of the field
         for y in range(HEIGHT):
-            if is_liquid_color(self.field[y][0]):
-                self.field[y][0] = 0
-            if is_liquid_color(self.field[y][WIDTH - 1]):
-                self.field[y][WIDTH - 1] = 0
+            if is_liquid_color(field[y][0]):
+                field[y][0] = COLOR_BACKGROUND
+            if is_liquid_color(field[y][WIDTH - 1]):
+                field[y][WIDTH - 1] = COLOR_BACKGROUND
         for x in range(WIDTH):
-            if self.field[HEIGHT][x] == 0 and is_liquid_color(self.field[HEIGHT - 1][x]):
-                self.field[HEIGHT - 1][x] = 0
+            if field[HEIGHT][x] == COLOR_BACKGROUND and is_liquid_color(field[HEIGHT - 1][x]):
+                field[HEIGHT - 1][x] = COLOR_BACKGROUND
 
         # Move droplets
         move_pick = pop_pick(self.dropMovePicks, DROPLET_MOVE_INTERVAL)
@@ -397,27 +411,26 @@ class BaseApp:
         for y in range(HEIGHT, -1, -1):
             for x in range(1, WIDTH - 1):
                 _ = (
-                    droplet_go_down(self.field, x, y)
+                    droplet_go_down(field, x, y)
                     or (y + x) % DROPLET_MOVE_INTERVAL == move_pick
-                    and droplet_move(self.field, x, y)
+                    and droplet_move(field, x, y)
                     or (y + x) % DROPLET_SWAP_INTERVAL == swap_pick
-                    and droplet_swap(self.field, x, y, random.randint(0, 1) == 0)
+                    and droplet_swap(field, x, y)
                 )
 
         # Generate new droplets
         t: int = self.frameCount % (DROPLET_DROP_SIZE * DROPLET_DROP_INTERVAL)
         if t < DROPLET_DROP_SIZE:
-            color_shift = LIQUID_COLOR_TIME_SHIFT if 5 <= now.hour < 15 else 0
             if t == 0:
-                self.dropX = WIDTH - THRUHOLE_WIDTH - 1 - random.randrange(DIGIT_DISP_ZOOM * 4) - 1
-                self.liquidColorIndex = (self.liquidColorIndex + 1) % len(LIQUID_COLOR_QUEUE)
-            self.field[0][self.dropX] = LIQUID_COLOR_QUEUE[self.liquidColorIndex] + color_shift
+                self.dropX = WIDTH - THRUHOLE_WIDTH - 1 - random.randrange(DIGIT_PIXEL_SIZE * 4) - 1
+            c = self.pick_liquid_color(now)
+            field[0][self.dropX] = c
 
     def update_terrain_by_cursor(self, cursor_pos: Tuple[int, int], button_clicked: int) -> None:
         """Update the terrain based on cursor interaction.
 
         Allows the user to modify the terrain by clicking with the mouse.
-        Left-click sets the cell to WALL_COLOR, right-click sets it to background (0).
+        Left-click sets the cell to WALL_COLOR, right-click sets it to background.
 
         Args:
             cursor_pos: The (x, y) coordinates of the cursor on the field.
@@ -427,9 +440,10 @@ class BaseApp:
         x, y = cursor_pos
         if 0 <= x < WIDTH and 0 <= y < HEIGHT:
             if button_clicked == 1:  # Left-click: set to WALL_COLOR
-                self.field[y][x] = WALL_COLOR
-            elif button_clicked == 3:  # Right-click: set to background (0)
-                self.field[y][x] = 0
+                self.field[y][x] = COLOR_WALL
+            elif button_clicked == 3:  # Right-click: set to background
+                if not is_liquid_color(self.field[y][x]):
+                    self.field[y][x] = COLOR_BACKGROUND
 
     def update_droplets_by_cursor(self, cursor_pos: Tuple[int, int], cursor_move: Tuple[int, int]) -> None:
         """Update droplet positions based on cursor interaction.
@@ -442,13 +456,15 @@ class BaseApp:
             cursor_pos: Current cursor (x,y) on the field.
             cursor_move:  The (dx,dy) movement of the cursor.
         """
+        field = self.field
+
         x, y = cursor_pos
-        if 0 <= x < WIDTH and 0 <= y < HEIGHT and is_liquid_color(self.field[y][x]):
+        if 0 <= x < WIDTH and 0 <= y < HEIGHT and is_liquid_color(field[y][x]):
             vx, vy = cursor_move
             dx, dy = x + vx, y + vy
-            if 0 <= dx < WIDTH and 0 <= dy < HEIGHT and self.field[dy][dx] == 0:
-                self.field[dy][dx] = self.field[y][x]
-                self.field[y][x] = 0
+            if 0 <= dx < WIDTH and 0 <= dy < HEIGHT and field[dy][dx] == COLOR_BACKGROUND:
+                field[dy][dx] = field[y][x]
+                field[y][x] = COLOR_BACKGROUND
             else:
                 if dx != 0:
                     dests = [(x, y - 1), (x, y + 1)]
@@ -458,8 +474,8 @@ class BaseApp:
                     assert False
                 random.shuffle(dests)
                 for dx, dy in dests:
-                    if 0 <= dx < WIDTH and 0 <= dy < HEIGHT and is_liquid_color(self.field[dy][dx]):
-                        self.field[y][x], self.field[dy][dx] = self.field[dy][dx], self.field[y][x]
+                    if 0 <= dx < WIDTH and 0 <= dy < HEIGHT and is_liquid_color(field[dy][dx]):
+                        field[y][x], field[dy][dx] = field[dy][dx], field[y][x]
                         break  # for dx, dy
 
     def update(
@@ -499,6 +515,25 @@ class BaseApp:
 
 # --- Pygame Version Class ---
 class AppPygame(BaseApp):
+    BASE_COLOR_1 = (0x4a, 0xac, 0xda)  # blue
+    ACCENT_COLOR_1 = (0xd9, 0xd4, 0x5d)
+    BASE_COLOR_2 = (0xe0, 0x34, 0x4a)  # red
+    ACCENT_COLOR_2 = (0xd9, 0xd4, 0x5d)
+    PALETTE: Dict[int, Tuple[int, int, int]] = {
+        COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),  # Background
+
+        8: BASE_COLOR_1,
+        9: modify_v(BASE_COLOR_1, 0.1),
+        10: ACCENT_COLOR_1,
+
+        11: modify_v(BASE_COLOR_2, -0.1),
+        12: BASE_COLOR_2,
+        13: ACCENT_COLOR_2,
+
+        COLOR_WALL: (0x20, 0x20, 0x20),  # Wall
+    }
+    LIQUID_COLOR_BASES: List[int] = [8, 11]
+
     def __init__(self, pygame_module) -> None:
         """Initialize the Pygame-based simulation."""
         super().__init__()
@@ -520,16 +555,16 @@ class AppPygame(BaseApp):
         """Draw the current simulation field using Pygame."""
         pygame = self.pygame
         clock_surface = pygame.Surface((WIDTH, HEIGHT))
-        clock_surface.fill(PALETTE[0])
+        clock_surface.fill(self.PALETTE[0])
         for y in range(HEIGHT):
             for x in range(WIDTH):
                 c: int = self.field[y][x]
-                if c == 0:
+                if c == COLOR_BACKGROUND:
                     for f in self.prevFields[::-1]:
                         if is_liquid_color(f[y][x]):
                             c = f[y][x]
-                if c > 0:
-                    color: Tuple[int, int, int] = PALETTE.get(c, (255, 255, 255))
+                if c != COLOR_BACKGROUND:
+                    color: Tuple[int, int, int] = self.PALETTE.get(c, (255, 255, 255))
                     clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
         final_scale: float = min(self.window_width / WIDTH, self.window_height / HEIGHT)
         dest_width: int = int(WIDTH * final_scale)
@@ -571,8 +606,10 @@ class AppPygame(BaseApp):
             acceleration: The simulation acceleration factor.
         """
         pygame = self.pygame
-        clock = pygame.time.Clock()
+
         start_time: datetime = datetime.now()
+        clock = pygame.time.Clock()
+
         running: bool = True
         while running:
             raw_mouse_pos: Optional[Tuple[int, int]] = None
@@ -621,9 +658,20 @@ class AppPygame(BaseApp):
         pygame.quit()
         sys.exit()
 
+    def pick_liquid_color(self, now: datetime):
+        bi = 1 if 1 <= now.hour < 4 else 0
+        c = self.LIQUID_COLOR_BASES[bi]
+        if self.frameCount % 2000 == 0:
+            c += 2
+        elif self.frameCount % 100 < 15:
+            c += 1
+        return c
+
 
 # --- Curses Version Class ---
 class AppCurses(BaseApp):
+    LIQUID_COLOR_BASE = 8
+    
     def __init__(self, curses_module, stdscr) -> None:
         """Initialize the curses-based simulation.
 
@@ -642,19 +690,14 @@ class AppCurses(BaseApp):
 
         # Simple color mapping (simulation color -> curses color)
         self.color_map: Dict[int, Tuple[int, int]] = {
-            0: (curses_module.COLOR_WHITE, curses_module.COLOR_WHITE),
+            COLOR_BACKGROUND: (curses_module.COLOR_WHITE, curses_module.COLOR_WHITE),
 
             8: (curses_module.COLOR_CYAN, curses_module.COLOR_CYAN),
             9: (curses_module.COLOR_BLUE, curses_module.COLOR_BLUE),
             10: (curses_module.COLOR_RED, curses_module.COLOR_RED),
 
-            11: (curses_module.COLOR_CYAN, curses_module.COLOR_CYAN),
-            12: (curses_module.COLOR_BLUE, curses_module.COLOR_BLUE),
-            13: (curses_module.COLOR_YELLOW, curses_module.COLOR_YELLOW),
-
-            16: (curses_module.COLOR_BLACK, curses_module.COLOR_BLACK),
+            COLOR_WALL: (curses_module.COLOR_BLACK, curses_module.COLOR_BLACK),
         }
-        assert all(c in self.color_map for c in PALETTE.keys())
 
         self.color_pairs: Dict[int, Any] = {}
         pair_number: int = 1
@@ -689,7 +732,7 @@ class AppCurses(BaseApp):
         for y in range(HEIGHT):
             for x in range(WIDTH):
                 c: int = self.field[y][x]
-                if c == 0:
+                if c == COLOR_BACKGROUND:
                     for prev in reversed(self.prevFields):
                         if is_liquid_color(prev[y][x]):
                             c = prev[y][x]
@@ -721,6 +764,13 @@ class AppCurses(BaseApp):
             self.draw()
             time.sleep(frame_delay)
 
+    def pick_liquid_color(self, now: datetime):
+        c = self.LIQUID_COLOR_BASE
+        if self.frameCount % 2000 == 0:
+            c += 2
+        elif self.frameCount % 100 < 15:
+            c += 1
+        return c
 
 # --- Main Entry Point ---
 def main() -> None:
