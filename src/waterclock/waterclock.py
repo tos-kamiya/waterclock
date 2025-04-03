@@ -731,8 +731,8 @@ class AppCurses(BaseApp):
         self.color_map: Dict[int, Tuple[int, int]] = {
             COLOR_BACKGROUND: (curses_module.COLOR_WHITE, curses_module.COLOR_WHITE),
 
-            8: (curses_module.COLOR_BLUE, curses_module.COLOR_BLUE),
-            9: (curses_module.COLOR_CYAN, curses_module.COLOR_CYAN),
+            8: (curses_module.COLOR_CYAN, curses_module.COLOR_CYAN),
+            9: (curses_module.COLOR_BLUE, curses_module.COLOR_BLUE),
             10: (curses_module.COLOR_RED, curses_module.COLOR_RED),
 
             COLOR_WALL: (curses_module.COLOR_BLACK, curses_module.COLOR_BLACK),
