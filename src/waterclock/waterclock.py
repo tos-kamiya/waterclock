@@ -12,6 +12,8 @@ except ImportError:
     __version__ = "(unknown)"
 
 # --- Constants ---
+FRAME_RATE = 20
+
 DIGIT_PIXEL_SIZE: int = 3
 THRUHOLE_WIDTH: int = 4
 WIDTH: int = (1 + 4 * 4) * DIGIT_PIXEL_SIZE + THRUHOLE_WIDTH
@@ -676,7 +678,7 @@ class AppPygame(BaseApp):
                 self.update(now=now, cursor_pos=pos, cursor_move=move, button_clicked=clicked)
                 self.draw()
                 pygame.display.flip()
-                clock.tick(20)
+                clock.tick(FRAME_RATE)
             else:
                 elapsed: timedelta = datetime.now() - start_time
                 simulated_seconds: float = elapsed.total_seconds() * acceleration
@@ -686,7 +688,7 @@ class AppPygame(BaseApp):
                 self.update(now=simulated_time, cursor_pos=pos, cursor_move=move, button_clicked=clicked)
                 self.draw()
                 pygame.display.flip()
-                clock.tick(20 * acceleration)
+                clock.tick(FRAME_RATE * acceleration)
         pygame.quit()
         sys.exit()
 
@@ -793,9 +795,10 @@ class AppCurses(BaseApp):
         now: datetime = datetime.now()
         self.init_field(now)
 
+        start_time = time.time()  # sec
+        frame_count = 0
+
         running: bool = True
-        fps: int = 20
-        frame_delay: float = 1.0 / fps
         while running:
             try:
                 key: int = self.stdscr.getch()
@@ -807,7 +810,15 @@ class AppCurses(BaseApp):
             now: datetime = datetime.now()
             self.update(now)
             self.draw()
-            time.sleep(frame_delay)
+
+            frame_count += 1
+            wait_until = start_time + frame_count / FRAME_RATE # sec
+            t = time.time()
+            if t < wait_until:
+                time.sleep(wait_until - t)
+            else:
+                start_time = t
+                frame_count = 0
 
     def pick_liquid_color(self, now: Optional[datetime] = None) -> int:
         c = self.LIQUID_COLOR_BASE
