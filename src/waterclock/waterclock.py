@@ -6,6 +6,13 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+import pygame
+
+from PyQt5.QtWidgets import QMainWindow, QApplication
+from PyQt5.QtGui import QPainter, QImage, QColor
+from PyQt5.QtCore import QTimer, Qt
+
+
 try:
     from .__about__ import __version__
 except ImportError:
@@ -530,8 +537,7 @@ class BaseApp:
                 self.update_droplets_by_cursor(cursor_pos, cursor_move)
 
 
-# --- Pygame Version Class ---
-class AppPygame(BaseApp):
+class GUIColorConfig:
     BASE_COLOR_1 = (0x4a, 0xac, 0xda)  # blue
     ACCENT_COLOR_1 = (0xd9, 0xd4, 0x5d)
     BASE_COLOR_2 = (0xe0, 0x34, 0x4a)  # red
@@ -554,16 +560,37 @@ class AppPygame(BaseApp):
     }
     LIQUID_COLOR_BASES: List[int] = [11, 21]
 
-    def __init__(self, pygame_module) -> None:
+    def pick_liquid_color(self, frame_count: int, now: Optional[datetime] = None) -> int:
+        if now is None:
+            return self.LIQUID_COLOR_BASES[0]
+
+        if 2 <= now.hour < 4:
+            c = self.LIQUID_COLOR_BASES[1]
+            if frame_count % 100 >= 85:
+                c += 1
+        else:
+            c = self.LIQUID_COLOR_BASES[0]
+            if frame_count % 8000 == 3:
+                c += 2
+            elif frame_count % 100 >= 85:
+                c += 1
+        return c
+
+
+# --- Pygame Version Class ---
+class AppPygame(BaseApp):
+    def __init__(self) -> None:
         """Initialize the Pygame-based simulation."""
         super().__init__()
-        self.pygame = pygame_module
-        pygame_module.init()
+        self.color_config = GUIColorConfig()
+
         self.window_width: int = WIDTH * 10
         self.window_height: int = HEIGHT * 10
-        self.screen = pygame_module.display.set_mode((self.window_width, self.window_height), pygame_module.RESIZABLE)
-        pygame_module.display.set_caption("Water Clock v" + __version__)
-        pygame_module.display.set_allow_screensaver(True)
+
+        pygame.init()
+        self.screen = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
+        pygame.display.set_caption("Water Clock v" + __version__)
+        pygame.display.set_allow_screensaver(True)
         self.prev_raw_mouse_pos: Optional[Tuple[int, int]] = None
 
     def update_canvas_size(self) -> None:
@@ -574,9 +601,9 @@ class AppPygame(BaseApp):
 
     def draw(self) -> None:
         """Draw the current simulation field using Pygame."""
-        pygame = self.pygame
+        palette = self.color_config.PALETTE
         clock_surface = pygame.Surface((WIDTH, HEIGHT))
-        clock_surface.fill(self.PALETTE[0])
+        clock_surface.fill(palette[COLOR_BACKGROUND])
         for y in range(HEIGHT):
             for x in range(WIDTH):
                 c: int = self.cover[y][x]
@@ -587,8 +614,9 @@ class AppPygame(BaseApp):
                             if is_liquid_color(f[y][x]):
                                 c = f[y][x]
                 if c != COLOR_BACKGROUND:
-                    color: Tuple[int, int, int] = self.PALETTE.get(c, (255, 255, 255))
+                    color: Tuple[int, int, int] = palette.get(c, (255, 255, 255))
                     clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
+
         final_scale: float = min(self.window_width / WIDTH, self.window_height / HEIGHT)
         dest_width: int = int(WIDTH * final_scale)
         dest_height: int = int(HEIGHT * final_scale)
@@ -628,8 +656,6 @@ class AppPygame(BaseApp):
         Args:
             acceleration: The simulation acceleration factor.
         """
-        pygame = self.pygame
-
         now: datetime = datetime.now()
         if add_hours != 0:
             self.init_field(now + timedelta(hours=add_hours))
@@ -693,20 +719,72 @@ class AppPygame(BaseApp):
         sys.exit()
 
     def pick_liquid_color(self, now: Optional[datetime] = None) -> int:
-        if now is None:
-            return self.LIQUID_COLOR_BASES[0]
+        return self.color_config.pick_liquid_color(self.frameCount, now)
 
-        if 1 <= now.hour < 3:
-            c = self.LIQUID_COLOR_BASES[1]
-            if self.frameCount % 100 >= 85:
-                c += 1
-        else:
-            c = self.LIQUID_COLOR_BASES[0]
-            if self.frameCount % 8000 == 3:
-                c += 2
-            elif self.frameCount % 100 >= 85:
-                c += 1
-        return c
+
+# --- PyQt5 version application class ---
+class AppPyQt(BaseApp, QMainWindow):
+    def __init__(self):
+        QMainWindow.__init__(self)
+        BaseApp.__init__(self)
+        self.color_config = GUIColorConfig()
+
+        self.setWindowTitle("Water Clock v" + __version__)
+        self.window_width = WIDTH * 10
+        self.window_height = HEIGHT * 10
+        self.setGeometry(100, 100, self.window_width, self.window_height)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        self.init_field(datetime.now())
+        
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.simulation_step)
+        self.timer.start(1000 // FRAME_RATE)
+
+    def simulation_step(self):
+        now = datetime.now()
+        self.update(now)
+        self.repaint()
+
+    def paintEvent(self, event):
+        palette = self.color_config.PALETTE
+        painter = QPainter(self)
+        img = QImage(WIDTH, HEIGHT, QImage.Format_ARGB32)
+        
+        bg_color = palette[COLOR_BACKGROUND]
+        img.fill(QColor(*bg_color, 128))
+        
+        for y in range(HEIGHT):
+            for x in range(WIDTH):
+                c = self.cover[y][x]
+                if c == 0:
+                    c = self.field[y][x]
+                    if c == COLOR_BACKGROUND:
+                        for f in reversed(self.prevFields):
+                            if is_liquid_color(f[y][x]):
+                                c = f[y][x]
+                                break
+                if c != COLOR_BACKGROUND:
+                    rgb = palette.get(c, (255, 255, 255))
+                    if c in [COLOR_WALL, COLOR_COVER]:
+                        color = QColor(*rgb, 255)
+                    elif c == COLOR_BACKGROUND:
+                        color = QColor(*rgb, 74)
+                    else:
+                        color = QColor(*rgb, 220)
+                    img.setPixelColor(x, y, color)
+        
+        scale = min(self.width() / WIDTH, self.height() / HEIGHT)
+        dest_width = int(WIDTH * scale)
+        dest_height = int(HEIGHT * scale)
+        scaled_img = img.scaled(dest_width, dest_height)
+        
+        offset_x = (self.width() - dest_width) // 2
+        offset_y = (self.height() - dest_height) // 2
+        painter.drawImage(offset_x, offset_y, scaled_img)
+
+    def pick_liquid_color(self, now: Optional[datetime] = None) -> int:
+        return self.color_config.pick_liquid_color(self.frameCount, now)
 
 
 # --- Curses Version Class ---
@@ -840,8 +918,10 @@ def main() -> None:
     Use the --curses command-line option to run the curses version,
     otherwise the Pygame version is started.
     """
-    parser = argparse.ArgumentParser(description="Water Clock Simulation with Pygame or Curses")
-    parser.add_argument("--curses", action="store_true", help="Use curses for terminal rendering")
+    parser = argparse.ArgumentParser(description="Water Clock Simulation")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--curses", action="store_true", help="Use curses for terminal rendering")
+    group.add_argument("--pygame", action="store_true", help="Use Pygame as GUI framework")
     parser.add_argument(
         "-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)"
     )
@@ -851,11 +931,14 @@ def main() -> None:
         import curses
 
         curses.wrapper(lambda stdscr: AppCurses(curses, stdscr).run())
-    else:
-        import pygame
-
-        app = AppPygame(pygame)
+    elif args.pygame:
+        app = AppPygame()
         app.run(acceleration=args.acceleration, add_hours=args.add_hours)
+    else:
+        app = QApplication(sys.argv)
+        window = AppPyQt()
+        window.show()
+        sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
