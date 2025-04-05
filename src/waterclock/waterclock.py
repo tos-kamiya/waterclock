@@ -537,27 +537,41 @@ class BaseApp:
 
 
 class GUIColorConfig:
-    BASE_COLOR_1 = (0x4a, 0xac, 0xda)  # blue
-    ACCENT_COLOR_1 = (0xd9, 0xd4, 0x5d)
-    BASE_COLOR_2 = (0xe0, 0x34, 0x4a)  # red
-    ACCENT_COLOR_2 = (0xd9, 0xd4, 0x5d)
-    BASE_COLOR_3 = (0x49, 0xb0, 0xd8)  # green
-    ACCENT_COLOR_3 = (0xd9, 0xd4, 0x5d)
-    PALETTE: Dict[int, Tuple[int, int, int]] = {
-        COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),  # Background
+    def __init__(self, color_scheme: str = "default"):
+        self.BASE_COLOR_1 = (0x4a, 0xac, 0xda)  # blue
+        self.ACCENT_COLOR_1 = (0xd9, 0xd4, 0x5d)
+        self.BASE_COLOR_2 = (0xe0, 0x34, 0x4a)  # red
+        self.ACCENT_COLOR_2 = (0xd9, 0xd4, 0x5d)
+        self.BASE_COLOR_3 = (0x49, 0xb0, 0xd8)  # green
+        self.ACCENT_COLOR_3 = (0xd9, 0xd4, 0x5d)
+        self.PALETTE: Dict[int, Tuple[int, int, int]] = {
+            11: self.BASE_COLOR_1,
+            12: modify_v(self.BASE_COLOR_1, 0.1),
+            13: self.ACCENT_COLOR_1,
 
-        11: BASE_COLOR_1,
-        12: modify_v(BASE_COLOR_1, 0.1),
-        13: ACCENT_COLOR_1,
-
-        21: modify_v(BASE_COLOR_2, -0.1),
-        22: BASE_COLOR_2,
-        23: ACCENT_COLOR_2,
-
-        COLOR_WALL: (0x20, 0x20, 0x20),  # Wall
-        COLOR_COVER: (0x24, 0x24, 0x24),  # Cover
-    }
-    LIQUID_COLOR_BASES: List[int] = [11, 21]
+            21: modify_v(self.BASE_COLOR_2, -0.1),
+            22: self.BASE_COLOR_2,
+            23: self.ACCENT_COLOR_2,
+        }
+        if color_scheme == "default":
+            self.PALETTE |= {
+                COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),
+                COLOR_WALL: (0x20, 0x20, 0x20),
+                COLOR_COVER: (0x24, 0x24, 0x24),
+            }
+        elif color_scheme == "light":
+            self.PALETTE |= {
+                COLOR_BACKGROUND: (0x40, 0x40, 0x40),
+                COLOR_WALL: (0xd0, 0xd0, 0xd0),
+                COLOR_COVER: (0xca, 0xca, 0xca),
+            }
+        elif color_scheme == "dark":
+            self.PALETTE |= {
+                COLOR_BACKGROUND: (0x40, 0x40, 0x40),
+                COLOR_WALL: (0x10, 0x10, 0x10),
+                COLOR_COVER: (0x12, 0x12, 0x12),
+            }
+        self.LIQUID_COLOR_BASES: List[int] = [11, 21]
 
     def pick_liquid_color(self, frame_count: int, now: Optional[datetime] = None) -> int:
         if now is None:
@@ -578,10 +592,12 @@ class GUIColorConfig:
 
 # --- Pygame Version Class ---
 class AppPygame(BaseApp):
-    def __init__(self) -> None:
+    def __init__(self, acceleration: int = 1, add_hours: int = 0, theme: str = "default") -> None:
         """Initialize the Pygame-based simulation."""
         super().__init__()
-        self.color_config = GUIColorConfig()
+        self.acceleration = acceleration
+        self.add_hours = add_hours
+        self.color_config = GUIColorConfig(theme)
 
         self.window_width: int = WIDTH * 10
         self.window_height: int = HEIGHT * 10
@@ -649,15 +665,10 @@ class AppPygame(BaseApp):
             return None
         return (field_x, field_y)
 
-    def run(self, acceleration: int = 1, add_hours: int = 0) -> None:
-        """Run the simulation using Pygame.
-
-        Args:
-            acceleration: The simulation acceleration factor.
-        """
+    def run(self) -> None:
         now: datetime = datetime.now()
-        if add_hours != 0:
-            self.init_field(now + timedelta(hours=add_hours))
+        if self.add_hours != 0:
+            self.init_field(now + timedelta(hours=self.add_hours))
         else:
             self.init_field(now)
 
@@ -696,24 +707,24 @@ class AppPygame(BaseApp):
                 pos = self.get_field_coordinates(raw_mouse_pos)
                 self.prev_raw_mouse_pos = raw_mouse_pos
 
-            if acceleration == 1:
+            if self.acceleration == 1:
                 now: datetime = datetime.now()
-                if add_hours != 0:
-                    now += timedelta(hours=add_hours)
+                if self.add_hours != 0:
+                    now += timedelta(hours=self.add_hours)
                 self.update(now=now, cursor_pos=pos, cursor_move=move, button_clicked=clicked)
                 self.draw()
                 pygame.display.flip()
                 clock.tick(FRAME_RATE)
             else:
                 elapsed: timedelta = datetime.now() - start_time
-                simulated_seconds: float = elapsed.total_seconds() * acceleration
+                simulated_seconds: float = elapsed.total_seconds() * self.acceleration
                 simulated_time: datetime = start_time + timedelta(seconds=simulated_seconds)
-                if add_hours != 0:
-                    simulated_time += timedelta(hours=add_hours)
+                if self.add_hours != 0:
+                    simulated_time += timedelta(hours=self.add_hours)
                 self.update(now=simulated_time, cursor_pos=pos, cursor_move=move, button_clicked=clicked)
                 self.draw()
                 pygame.display.flip()
-                clock.tick(FRAME_RATE * acceleration)
+                clock.tick(FRAME_RATE * self.acceleration)
         pygame.quit()
         sys.exit()
 
@@ -723,7 +734,7 @@ class AppPygame(BaseApp):
 
 # --- PyQt5 version application class ---
 class AppPyQt(BaseApp, QMainWindow):
-    def __init__(self):
+    def __init__(self, theme: str = "default"):
         BaseApp.__init__(self)
 
         QMainWindow.__init__(self)
@@ -733,7 +744,7 @@ class AppPyQt(BaseApp, QMainWindow):
         self.dragPos = None
         self.initUI()
 
-        self.color_config = GUIColorConfig()
+        self.color_config = GUIColorConfig(theme)
 
         self.setWindowTitle("Water Clock v" + __version__)
         self.window_width = WIDTH * 10
@@ -753,12 +764,33 @@ class AppPyQt(BaseApp, QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Grep widget for resize
+        # Grip widget for resize
         grip = QSizeGrip(self)
         grip.setStyleSheet("background-color: rgba(100, 100, 255, 150);")
         layout.addWidget(grip, 0, Qt.AlignBottom | Qt.AlignRight)
 
-        self.resize(400, 300)
+        self._resizing = False
+        self.resize(WIDTH, HEIGHT)
+
+    def resizeEvent(self, event):
+        if self._resizing:
+            return super().resizeEvent(event)
+        self._resizing = True
+
+        target_ratio = WIDTH / HEIGHT
+        new_width = max(100, event.size().width())
+        new_height = max(50, event.size().height())
+        current_ratio = new_width / new_height if new_height != 0 else target_ratio
+
+        if current_ratio > target_ratio:
+            new_width = int(new_height * target_ratio)
+        else:
+            new_height = int(new_width / target_ratio)
+
+        self.resize(new_width, new_height)
+
+        self._resizing = False
+        return super().resizeEvent(event)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -807,7 +839,7 @@ class AppPyQt(BaseApp, QMainWindow):
                     if c in [COLOR_WALL, COLOR_COVER]:
                         color = QColor(*rgb, 255)
                     elif c == COLOR_BACKGROUND:
-                        color = QColor(*rgb, 60)
+                        color = QColor(*rgb, 30)
                     else:
                         color = QColor(*rgb, 230)
                     img.setPixelColor(x, y, color)
@@ -958,23 +990,37 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description="Water Clock Simulation")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--curses", action="store_true", help="Use curses for terminal rendering")
-    group.add_argument("--pygame", action="store_true", help="Use Pygame as GUI framework")
+    group.add_argument("--curses", action="store_true", help="Use curses for terminal rendering.")
+    group.add_argument("--pygame", action="store_true", help="Use Pygame as GUI framework.")
     parser.add_argument(
-        "-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)"
+        "--theme",
+        type=str,
+        choices=["default", "dark", "light"],
+        default="default",
+        help="Color theme (choose from 'default', 'dark', or 'light')."
     )
-    parser.add_argument("--add-hours", type=int, default=0)
+    parser.add_argument(
+        "-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)."
+    )
+    parser.add_argument("--add-hours", type=int, default=0, help="Modify start time.")
+
     args = parser.parse_args()
+    if not args.pygame:
+        if args.acceleration != 1:
+            parser.error("--acceleration is only valid when --pygame is specified")
+        if args.add_hours != 0:
+            parser.error("--add-hours is only valid when --pygame is specified")
+
     if args.curses:
         import curses
 
         curses.wrapper(lambda stdscr: AppCurses(curses, stdscr).run())
     elif args.pygame:
-        app = AppPygame()
-        app.run(acceleration=args.acceleration, add_hours=args.add_hours)
+        app = AppPygame(acceleration=args.acceleration, add_hours=args.add_hours, theme=args.theme)
+        app.run()
     else:
         app = QApplication(sys.argv)
-        window = AppPyQt()
+        window = AppPyQt(theme=args.theme)
         window.show()
         sys.exit(app.exec_())
 
