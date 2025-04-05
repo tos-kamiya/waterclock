@@ -26,3 +26,19 @@ pip install .
 ```
 
 インストール後に、`waterclock` コマンドで起動してください。
+
+## 利用法
+
+デフォルトでは、PyQt5ベースのGUIで起動します。次のコマンドラインオプションが利用可能です。
+
+- `--curses`  
+  Cursesを利用してターミナルに描画します。
+
+- `--pygame`  
+  PygameをGUIフレームワークとして利用します。オプション `--acceleration` や `--add-hours` はPygameモードのときのみ利用可能です。
+
+- `--theme {default,dark,light}`  
+  カラーテーマを指定します。デフォルトは `default` です。
+
+- `-g, --load-geometry`  
+  起動時にウィンドウの位置とサイズを復元します。PyQt5モードのときのみ利用可能です。

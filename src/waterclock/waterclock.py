@@ -1,21 +1,29 @@
 import argparse
 import colorsys
 from datetime import datetime, timedelta
+import json
+import os
 import random
 import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import pygame
-
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QSizeGrip
 from PyQt5.QtGui import QPainter, QImage, QColor
 from PyQt5.QtCore import QTimer, Qt
+from appdirs import user_cache_dir
 
 try:
     from .__about__ import __version__
 except ImportError:
     __version__ = "(unknown)"
+
+APP_NAME = "waterclock"
+APP_AUTHOR = "tos-kamiya"
+
+CACHE_DIR = user_cache_dir(APP_NAME, APP_AUTHOR)
+CACHE_FILE_GEOMETRY = os.path.join(CACHE_DIR, "window_geometry.json")
 
 # --- Constants ---
 FRAME_RATE = 20
@@ -55,6 +63,32 @@ DIGIT_BITMAPS: List[List[List[int]]] = [
 ]
 
 # --- Utility Functions ---
+def load_window_geometry():
+    if not os.path.exists(CACHE_FILE_GEOMETRY):
+        return None
+
+    try:
+        with open(CACHE_FILE_GEOMETRY, "r") as f:
+            geometry = json.load(f)
+        x, y = int(geometry["window_x"]), int(geometry["window_y"])
+        width, height = int(geometry["window_width"]), int(geometry["window_height"])
+        print(f"Info: load window geometry from file: {CACHE_FILE_GEOMETRY}", file=sys.stderr)
+        return x, y, width, height
+    except Exception as e:
+        print(f"Error: fail to load window geometry from file: {CACHE_FILE_GEOMETRY}", file=sys.stderr)
+        return None
+
+
+def save_window_geometry(x, y, width, height):
+    geometry = {"window_x": x, "window_y": y, "window_width": width, "window_height": height}
+    try:
+        with open(CACHE_FILE_GEOMETRY, "w") as f:
+            json.dump(geometry, f, indent=4)
+        print(f"Info: save window geometry to file: {CACHE_FILE_GEOMETRY}", file=sys.stderr)
+    except Exception as e:
+        print(f"Error: fail to save window geometry to file: {CACHE_FILE_GEOMETRY}", file=sys.stderr)
+
+
 def modify_v(rgb: Tuple[int, int, int], v_add: float) -> Tuple[int, int, int]:
     assert -1.0 <= v_add <= 1.0
 
@@ -562,8 +596,8 @@ class GUIColorConfig:
         elif color_scheme == "light":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x40, 0x40, 0x40),
-                COLOR_WALL: (0xd0, 0xd0, 0xd0),
-                COLOR_COVER: (0xca, 0xca, 0xca),
+                COLOR_WALL: (0xf0, 0xf0, 0xf0),
+                COLOR_COVER: (0xea, 0xea, 0xea),
             }
         elif color_scheme == "dark":
             self.PALETTE |= {
@@ -734,23 +768,23 @@ class AppPygame(BaseApp):
 
 # --- PyQt5 version application class ---
 class AppPyQt(BaseApp, QMainWindow):
-    def __init__(self, theme: str = "default"):
+    def __init__(self, theme: str = "default", load_geometry: bool = False):
         BaseApp.__init__(self)
-
         QMainWindow.__init__(self)
-        self.setWindowFlags(Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
 
-        self.dragPos = None
+        self._resizing = False
+        self._dragPos = None
         self.initUI()
 
         self.color_config = GUIColorConfig(theme)
 
-        self.setWindowTitle("Water Clock v" + __version__)
-        self.window_width = WIDTH * 10
-        self.window_height = HEIGHT * 10
-        self.setGeometry(100, 100, self.window_width, self.window_height)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        if load_geometry:
+            r = load_window_geometry()
+            if r is not None:
+                x, y, width, height = r
+                self.setGeometry(x, y, width, height)
+        else:
+            self.setGeometry(100, 100, WIDTH * 10, HEIGHT * 10)
 
         self.init_field(datetime.now())
 
@@ -769,8 +803,15 @@ class AppPyQt(BaseApp, QMainWindow):
         grip.setStyleSheet("background-color: rgba(100, 100, 255, 150);")
         layout.addWidget(grip, 0, Qt.AlignBottom | Qt.AlignRight)
 
-        self._resizing = False
-        self.resize(WIDTH, HEIGHT)
+        self.setWindowTitle("Water Clock v" + __version__)
+
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+    def closeEvent(self, event):
+        geom = self.geometry()
+        save_window_geometry(geom.x(), geom.y(), geom.width(), geom.height())
+        event.accept()
 
     def resizeEvent(self, event):
         if self._resizing:
@@ -794,16 +835,16 @@ class AppPyQt(BaseApp, QMainWindow):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.dragPos = event.globalPos() - self.frameGeometry().topLeft()
+            self._dragPos = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if self.dragPos and event.buttons() & Qt.LeftButton:
-            self.move(event.globalPos() - self.dragPos)
+        if self._dragPos and event.buttons() & Qt.LeftButton:
+            self.move(event.globalPos() - self._dragPos)
             event.accept()
 
     def mouseReleaseEvent(self, event):
-        self.dragPos = None
+        self._dragPos = None
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Escape, Qt.Key_Q):
@@ -1003,6 +1044,7 @@ def main() -> None:
         "-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)."
     )
     parser.add_argument("--add-hours", type=int, default=0, help="Modify start time.")
+    parser.add_argument("-g", "--load-geometry", action="store_true", help="Restore window position and size on startup.")
 
     args = parser.parse_args()
     if not args.pygame:
@@ -1010,6 +1052,12 @@ def main() -> None:
             parser.error("--acceleration is only valid when --pygame is specified")
         if args.add_hours != 0:
             parser.error("--add-hours is only valid when --pygame is specified")
+
+    if args.pygame or args.curses:
+        if args.load_geometry:
+            parser.error("--load-geometry is invalid when either --pygame or --curses is specified")
+
+    os.makedirs(CACHE_DIR, exist_ok=True)
 
     if args.curses:
         import curses
@@ -1020,7 +1068,7 @@ def main() -> None:
         app.run()
     else:
         app = QApplication(sys.argv)
-        window = AppPyQt(theme=args.theme)
+        window = AppPyQt(theme=args.theme, load_geometry=args.load_geometry)
         window.show()
         sys.exit(app.exec_())
 

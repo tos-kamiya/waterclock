@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
   "pygame",
   "pyqt5",
+  "appdirs",
 ]
 
 [tool.hatch.version]
