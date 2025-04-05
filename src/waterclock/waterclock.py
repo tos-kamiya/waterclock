@@ -769,9 +769,9 @@ class AppPyQt(BaseApp, QMainWindow):
                     if c in [COLOR_WALL, COLOR_COVER]:
                         color = QColor(*rgb, 255)
                     elif c == COLOR_BACKGROUND:
-                        color = QColor(*rgb, 74)
+                        color = QColor(*rgb, 60)
                     else:
-                        color = QColor(*rgb, 220)
+                        color = QColor(*rgb, 230)
                     img.setPixelColor(x, y, color)
         
         scale = min(self.width() / WIDTH, self.height() / HEIGHT)
