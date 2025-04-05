@@ -4,7 +4,7 @@
 
 A digital water clock.
 
-![](waterclock-screenshot3.png)
+![](waterclock-screenshot4.png)
 
 This project simulates water droplets falling and moving inside containers shaped like digital clock digits.
 

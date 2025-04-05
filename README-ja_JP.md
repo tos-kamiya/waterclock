@@ -5,7 +5,7 @@ Water Clock
 
 デジタルの水時計。
 
-![](waterclock-screenshot3.png)
+![](waterclock-screenshot4.png)
 
 時計の数字の形の入れ物に水滴が落下・移動する様子がシミュレーションされます。  
 
