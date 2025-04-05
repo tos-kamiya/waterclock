@@ -8,10 +8,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pygame
 
-from PyQt5.QtWidgets import QMainWindow, QApplication
+from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QSizeGrip
 from PyQt5.QtGui import QPainter, QImage, QColor
 from PyQt5.QtCore import QTimer, Qt
-
 
 try:
     from .__about__ import __version__
@@ -725,8 +724,15 @@ class AppPygame(BaseApp):
 # --- PyQt5 version application class ---
 class AppPyQt(BaseApp, QMainWindow):
     def __init__(self):
-        QMainWindow.__init__(self)
         BaseApp.__init__(self)
+
+        QMainWindow.__init__(self)
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+        self.dragPos = None
+        self.initUI()
+
         self.color_config = GUIColorConfig()
 
         self.setWindowTitle("Water Clock v" + __version__)
@@ -734,12 +740,44 @@ class AppPyQt(BaseApp, QMainWindow):
         self.window_height = HEIGHT * 10
         self.setGeometry(100, 100, self.window_width, self.window_height)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        
+
         self.init_field(datetime.now())
-        
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.simulation_step)
         self.timer.start(1000 // FRAME_RATE)
+
+    def initUI(self):
+        central = QWidget(self)
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Grep widget for resize
+        grip = QSizeGrip(self)
+        grip.setStyleSheet("background-color: rgba(100, 100, 255, 150);")
+        layout.addWidget(grip, 0, Qt.AlignBottom | Qt.AlignRight)
+
+        self.resize(400, 300)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.dragPos = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self.dragPos and event.buttons() & Qt.LeftButton:
+            self.move(event.globalPos() - self.dragPos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self.dragPos = None
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Escape, Qt.Key_Q):
+            self.close()
+        else:
+            super().keyPressEvent(event)
 
     def simulation_step(self):
         now = datetime.now()
@@ -750,10 +788,10 @@ class AppPyQt(BaseApp, QMainWindow):
         palette = self.color_config.PALETTE
         painter = QPainter(self)
         img = QImage(WIDTH, HEIGHT, QImage.Format_ARGB32)
-        
+
         bg_color = palette[COLOR_BACKGROUND]
         img.fill(QColor(*bg_color, 128))
-        
+
         for y in range(HEIGHT):
             for x in range(WIDTH):
                 c = self.cover[y][x]
@@ -765,7 +803,7 @@ class AppPyQt(BaseApp, QMainWindow):
                                 c = f[y][x]
                                 break
                 if c != COLOR_BACKGROUND:
-                    rgb = palette.get(c, (255, 255, 255))
+                    rgb = palette.get(c, (250, 250, 250))
                     if c in [COLOR_WALL, COLOR_COVER]:
                         color = QColor(*rgb, 255)
                     elif c == COLOR_BACKGROUND:
@@ -773,12 +811,12 @@ class AppPyQt(BaseApp, QMainWindow):
                     else:
                         color = QColor(*rgb, 230)
                     img.setPixelColor(x, y, color)
-        
+
         scale = min(self.width() / WIDTH, self.height() / HEIGHT)
         dest_width = int(WIDTH * scale)
         dest_height = int(HEIGHT * scale)
         scaled_img = img.scaled(dest_width, dest_height)
-        
+
         offset_x = (self.width() - dest_width) // 2
         offset_y = (self.height() - dest_height) // 2
         painter.drawImage(offset_x, offset_y, scaled_img)
@@ -790,7 +828,7 @@ class AppPyQt(BaseApp, QMainWindow):
 # --- Curses Version Class ---
 class AppCurses(BaseApp):
     LIQUID_COLOR_BASE = 8
-    
+
     def __init__(self, curses_module, stdscr) -> None:
         """Initialize the curses-based simulation.
 
