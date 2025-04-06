@@ -3,14 +3,16 @@ import colorsys
 from datetime import datetime, timedelta
 import json
 import os
+import platform
 import random
+import shutil
 import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import pygame
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QSizeGrip
-from PyQt5.QtGui import QPainter, QImage, QColor
+from PyQt5.QtGui import QPainter, QImage, QColor, QIcon
 from PyQt5.QtCore import QTimer, Qt
 from appdirs import user_cache_dir
 
@@ -63,6 +65,60 @@ DIGIT_BITMAPS: List[List[List[int]]] = [
 ]
 
 # --- Utility Functions ---
+def find_icon_file(filename):
+    base_dirs = []
+    pkg_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
+    base_dirs.append(pkg_data_dir)
+    try:
+        pyinstaller_data_dir = sys._MEIPASS
+        base_dirs.append(pyinstaller_data_dir)
+    except Exception:
+        pass
+    base_dirs.append(os.path.abspath("."))
+
+    for b in base_dirs:
+        icon_path = os.path.join(b, filename)
+        if os.path.exists(icon_path):
+            return icon_path
+    return None
+
+
+def generate_desktop_file(theme="default", load_geometry=False):
+    if platform.system() != "Linux":
+        sys.exit("Error: .desktop file is valid only on Linux system.")
+
+    exec_path = shutil.which("waterclock") or os.path.abspath(sys.argv[0])
+
+    icon_path = find_icon_file("icon256.png") or ""
+
+    options = ""
+    if theme:
+        options += f" --theme {theme}"
+    if load_geometry:
+        options += " --load-geometry"
+
+    desktop_file_content = f"""[Desktop Entry]
+Name=Water Clock
+Comment=A digital water clock simulation
+Exec={exec_path}{options}
+Icon={icon_path}
+Terminal=false
+Type=Application
+Categories=Utility;
+"""
+    dest_file = os.path.join(os.getcwd(), "waterclock.desktop")
+
+    try:
+        with open(dest_file, "w") as f:
+            f.write(desktop_file_content)
+        print(f".desktop file generated at {dest_file}", file=sys.stderr)
+        print("To integrate with your system, copy this file to ~/.local/share/applications/ or ~/.config/autostart/", file=sys.stderr)
+        print("For example:", file=sys.stderr)
+        print("  cp waterclock.desktop ~/.local/share/applications/", file=sys.stderr)
+    except Exception as e:
+        sys.exit(f"Error: Failed to generate .desktop file: {e}")
+
+
 def load_window_geometry():
     if not os.path.exists(CACHE_FILE_GEOMETRY):
         return None
@@ -630,15 +686,20 @@ class AppPygame(BaseApp):
         self.acceleration = acceleration
         self.add_hours = add_hours
         self.color_config = GUIColorConfig(theme)
-
+        self.prev_raw_mouse_pos: Optional[Tuple[int, int]] = None
         self.window_width: int = WIDTH * 10
         self.window_height: int = HEIGHT * 10
 
         pygame.init()
+
         self.screen = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
         pygame.display.set_caption("Water Clock v" + __version__)
         pygame.display.set_allow_screensaver(True)
-        self.prev_raw_mouse_pos: Optional[Tuple[int, int]] = None
+
+        icon_path = find_icon_file("icon32.png")
+        if icon_path is not None:
+            icon = pygame.image.load(icon_path)
+            pygame.display.set_icon(icon)
 
     def update_canvas_size(self) -> None:
         """Update the canvas size from the current window size."""
@@ -1043,6 +1104,8 @@ def main() -> None:
     )
     parser.add_argument("--add-hours", type=int, default=0, help="Modify start time.")
     parser.add_argument("-g", "--load-geometry", action="store_true", help="Restore window position and size on startup.")
+    parser.add_argument("--generate-desktop", action="store_true",
+                        help="Generate a .desktop file in the current directory")
 
     args = parser.parse_args()
     if not args.pygame:
@@ -1055,6 +1118,10 @@ def main() -> None:
         if args.load_geometry:
             parser.error("--load-geometry is invalid when either --pygame or --curses is specified")
 
+    if args.generate_desktop:
+        generate_desktop_file(theme=args.theme, load_geometry=args.load_geometry)
+        sys.exit(0)
+
     os.makedirs(CACHE_DIR, exist_ok=True)
 
     if args.curses:
@@ -1066,6 +1133,10 @@ def main() -> None:
         app.run()
     else:
         app = QApplication(sys.argv)
+        icon_path = find_icon_file("icon.ico")
+        if icon_path is not None:
+            app.setWindowIcon(QIcon(icon_path))
+
         window = AppPyQt(theme=args.theme, load_geometry=args.load_geometry)
         window.show()
         sys.exit(app.exec_())
