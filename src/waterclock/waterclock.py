@@ -218,7 +218,7 @@ def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
                         field[y][x] = COLOR_WALL
 
 
-def droplet_go_down(field: List[List[int]], x: int, y: int) -> bool:
+def droplets_go_down(field: List[List[int]]):
     """Simulate the downward movement of a droplet.
 
     If the cell below is empty, the droplet moves down. If the cell below
@@ -226,35 +226,29 @@ def droplet_go_down(field: List[List[int]], x: int, y: int) -> bool:
 
     Args:
         field: The simulation field.
-        x: The x-coordinate of the droplet.
-        y: The y-coordinate of the droplet.
-
-    Returns:
-        True if the droplet moved, False otherwise.
     """
-    c: int = field[y][x]
-    if not is_liquid_color(c):
-        return False
-    if y >= HEIGHT:
-        return False
 
-    if y + 1 < HEIGHT and field[y + 1][x] == COLOR_BACKGROUND:
-        field[y + 1][x] = c
-        field[y][x] = COLOR_BACKGROUND
-        return True
-    elif y + 1 < HEIGHT and is_liquid_color(field[y + 1][x]):
-        dx = x + random.choice([-1, 1])
-        if field[y + 1][dx] == COLOR_BACKGROUND:
-            if field[y][dx] == COLOR_BACKGROUND:
-                field[y + 1][dx] = c
-                field[y][x] = COLOR_BACKGROUND
-                return True
-            elif is_liquid_color(field[y + 1][x]):
-                field[y + 1][dx] = field[y + 1][x]
-                field[y + 1][x] = c
-                field[y][x] = COLOR_BACKGROUND
-                return True
-    return False
+    for y in range(HEIGHT - 1, -1, -1):
+        field_y: List[int] = field[y]
+        field_y1: List[int] = field[y + 1]
+        for x in range(1, WIDTH - 1):
+            c: int = field_y[x]
+            if not is_liquid_color(c):
+                continue
+
+            if field_y1[x] == COLOR_BACKGROUND:
+                field_y1[x] = c
+                field_y[x] = COLOR_BACKGROUND
+            elif is_liquid_color(field_y1[x]):
+                dx = x + random.choice([-1, 1])
+                if field_y1[dx] == COLOR_BACKGROUND:
+                    if field_y[dx] == COLOR_BACKGROUND:
+                        field_y1[dx] = c
+                        field_y[x] = COLOR_BACKGROUND
+                    elif is_liquid_color(field_y1[x]):
+                        field_y1[dx] = field_y1[x]
+                        field_y1[x] = c
+                        field_y[x] = COLOR_BACKGROUND
 
 
 def droplet_swap(field: List[List[int]], x: int, y: int) -> bool:
@@ -268,9 +262,10 @@ def droplet_swap(field: List[List[int]], x: int, y: int) -> bool:
         x: The x-coordinate of the droplet.
         y: The y-coordinate of the droplet.
     """
+    vxvys = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
     def count_same_droplets(x: int, y: int):
         c: int = field[y][x]
-        vxvys = [(-1, 0), (1, 0), (0, -1), (0, 1)]
         same_liquids = 0
         for vx, vy in vxvys:
             dx, dy = x + vx, y + vy
@@ -283,10 +278,8 @@ def droplet_swap(field: List[List[int]], x: int, y: int) -> bool:
     if not is_liquid_color(c):
         return False
 
-    if random.randrange(2) == 0:
-        dx, dy = x + random.choice([-1, 1]), y
-    else:
-        dx, dy = x, y + random.choice([-1, 1])
+    vx, vy = vxvys[random.randrange(4)]
+    dx, dy = x + vx, y + vy
     if not (0 <= dx < WIDTH and 0 <= dy < HEIGHT):
         return False
 
@@ -326,17 +319,20 @@ def droplet_move(field: List[List[int]], x: int, y: int) -> bool:
     if not (0 <= x - 1 and x + 1 < WIDTH):
         return False
 
-    c: int = field[y][x]
+    field_y = field[y]
+    c: int = field_y[x]
     if not is_liquid_color(c):
         return False
+    if y + 1 < HEIGHT and field[y + 1][x] == COLOR_BACKGROUND:
+        return False
 
-    if field[y][x - 1] != COLOR_BACKGROUND and field[y][x + 1] == COLOR_BACKGROUND:
-        field[y][x + 1] = c
-        field[y][x] = COLOR_BACKGROUND
+    if field_y[x - 1] != COLOR_BACKGROUND and field_y[x + 1] == COLOR_BACKGROUND:
+        field_y[x + 1] = c
+        field_y[x] = COLOR_BACKGROUND
         return True
-    elif field[y][x + 1] != COLOR_BACKGROUND and field[y][x - 1] == COLOR_BACKGROUND:
-        field[y][x - 1] = c
-        field[y][x] = COLOR_BACKGROUND
+    elif field_y[x + 1] != COLOR_BACKGROUND and field_y[x - 1] == COLOR_BACKGROUND:
+        field_y[x - 1] = c
+        field_y[x] = COLOR_BACKGROUND
         return True
     return False
 
@@ -460,14 +456,16 @@ class BaseApp:
                 field[HEIGHT - 1][x] = COLOR_BACKGROUND
 
         # Move droplets
+        droplets_go_down(field)
         move_pick = pop_pick(self.dropMovePicks, DROPLET_MOVE_INTERVAL)
         swap_pick = pop_pick(self.dropSwapPicks, DROPLET_SWAP_INTERVAL)
         for y in range(HEIGHT, -1, -1):
             for x in range(1, WIDTH - 1):
-                r = droplet_go_down(field, x, y)
-                if not r and (y + x) % DROPLET_MOVE_INTERVAL == move_pick:
+                p = y + x
+                r = False
+                if p % DROPLET_MOVE_INTERVAL == move_pick:
                     r = droplet_move(field, x, y)
-                if not r and (y + x) % DROPLET_SWAP_INTERVAL == swap_pick:
+                if not r and p % DROPLET_SWAP_INTERVAL == swap_pick:
                     _ = droplet_swap(field, x, y)
 
         # Generate new droplets
