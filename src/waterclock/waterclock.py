@@ -36,7 +36,7 @@ WIDTH: int = (1 + 4 * 4) * DIGIT_PIXEL_SIZE + THRUHOLE_WIDTH
 HEIGHT: int = 7 * DIGIT_PIXEL_SIZE
 
 SINKHOLE_OPENING_PERIOD: int = 40
-SINKHOLE_EXTENSION: Dict[int, int] = {0: 5, 1: 6, 2: -7, 3: 5, 4: 12, 5: 12, 6: -4, 7: 14, 8: -14, 9: 12}
+SINKHOLE_EXTENSION: Dict[int, int] = {0: 4, 1: 6, 2: -7, 3: 5, 4: 13, 5: 13, 6: -5, 7: 15, 8: -14, 9: 13}
 DROPLET_MOVE_INTERVAL: int = 4
 DROPLET_SWAP_INTERVAL: int = 60
 DROPLET_DROP_SIZE: int = 2
@@ -55,7 +55,7 @@ DIGIT_BITMAP_STRINGS: List[str] = [
     "101\n111\n111\n001\n001\n",  # 4
     "111\n100\n111\n001\n111\n",  # 5
     "111\n100\n111\n101\n111\n",  # 6
-    "111\n111\n001\n001\n001\n",  # 7
+    "111\n101\n001\n011\n001\n",  # 7
     "111\n101\n111\n101\n111\n",  # 8
     "111\n101\n111\n001\n111\n",  # 9
     "000\n010\n000\n010\n000\n",  # Cover
