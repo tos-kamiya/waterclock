@@ -917,12 +917,26 @@ class AppPyQt(BaseApp, QMainWindow):
         self.repaint()
 
     def paintEvent(self, event):
-        palette = self.color_config.PALETTE
+        palette: Dict[int, Tuple[int, int, int]] = self.color_config.PALETTE
+
+        qcolor_cache = {}
+
+        def get_color(color_code):
+            if color_code not in qcolor_cache:
+                rgb = palette.get(color_code, (250, 250, 250))
+                if color_code in [COLOR_WALL, COLOR_COVER]:
+                    alpha = 255
+                elif color_code == COLOR_BACKGROUND:
+                    alpha = 128
+                else:
+                    alpha = 230
+                qcolor_cache[color_code] = QColor(*rgb, alpha)
+            return qcolor_cache[color_code]
+
         painter = QPainter(self)
         img = QImage(WIDTH, HEIGHT, QImage.Format_ARGB32)
 
-        bg_color = palette[COLOR_BACKGROUND]
-        img.fill(QColor(*bg_color, 128))
+        img.fill(get_color(COLOR_BACKGROUND))
 
         for y in range(HEIGHT):
             for x in range(WIDTH):
@@ -935,23 +949,18 @@ class AppPyQt(BaseApp, QMainWindow):
                                 c = f[y][x]
                                 break
                 if c != COLOR_BACKGROUND:
-                    rgb = palette.get(c, (250, 250, 250))
-                    if c in [COLOR_WALL, COLOR_COVER]:
-                        color = QColor(*rgb, 255)
-                    elif c == COLOR_BACKGROUND:
-                        color = QColor(*rgb, 30)
-                    else:
-                        color = QColor(*rgb, 230)
+                    color = get_color(c)
                     img.setPixelColor(x, y, color)
 
         scale = min(self.width() / WIDTH, self.height() / HEIGHT)
-        dest_width = int(WIDTH * scale)
-        dest_height = int(HEIGHT * scale)
-        scaled_img = img.scaled(dest_width, dest_height)
+        offset_x = (self.width() - int(WIDTH * scale)) // 2
+        offset_y = (self.height() - int(HEIGHT * scale)) // 2
 
-        offset_x = (self.width() - dest_width) // 2
-        offset_y = (self.height() - dest_height) // 2
-        painter.drawImage(offset_x, offset_y, scaled_img)
+        painter.save()
+        painter.translate(offset_x, offset_y)
+        painter.scale(scale, scale)
+        painter.drawImage(0, 0, img)
+        painter.restore()
 
     def pick_liquid_color(self, now: Optional[datetime] = None) -> int:
         return self.color_config.pick_liquid_color(self.frameCount, now)
@@ -1106,6 +1115,7 @@ def main() -> None:
     parser.add_argument("-g", "--load-geometry", action="store_true", help="Restore window position and size on startup.")
     parser.add_argument("--generate-desktop", action="store_true",
                         help="Generate a .desktop file in the current directory")
+    parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
 
     args = parser.parse_args()
     if not args.pygame:
