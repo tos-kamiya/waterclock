@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pygame
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QSizeGrip
-from PyQt5.QtGui import QPainter, QImage, QColor, QIcon
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtGui import QPainter, QImage, QColor, QIcon, QPainterPath
+from PyQt5.QtCore import QTimer, Qt, QRectF
 from appdirs import user_cache_dir
 
 try:
@@ -837,13 +837,14 @@ class AppPyQt(BaseApp, QMainWindow):
 
         self.color_config = GUIColorConfig(theme)
 
+        x, y = 100, 100
+        width, height = WIDTH * 10, HEIGHT * 10
         if load_geometry:
             r = load_window_geometry()
             if r is not None:
                 x, y, width, height = r
-                self.setGeometry(x, y, width, height)
-        else:
-            self.setGeometry(100, 100, WIDTH * 10, HEIGHT * 10)
+        self.setGeometry(x, y, width, height)
+        self._corner_radius = height / 20
 
         self.init_field(datetime.now())
 
@@ -888,6 +889,7 @@ class AppPyQt(BaseApp, QMainWindow):
             new_height = int(new_width / target_ratio)
 
         self.resize(new_width, new_height)
+        self._corner_radius = new_height / 20
 
         self._resizing = False
         return super().resizeEvent(event)
@@ -934,6 +936,15 @@ class AppPyQt(BaseApp, QMainWindow):
             return qcolor_cache[color_code]
 
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        path = QPainterPath()
+        path.addRoundedRect(
+            QRectF(0, 0, self.width(), self.height()),
+            self._corner_radius, self._corner_radius
+        )
+        painter.setClipPath(path)
+
         img = QImage(WIDTH, HEIGHT, QImage.Format_ARGB32)
 
         img.fill(get_color(COLOR_BACKGROUND))
