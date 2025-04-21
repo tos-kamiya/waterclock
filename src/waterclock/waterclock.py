@@ -145,19 +145,23 @@ def save_window_geometry(x, y, width, height):
         print(f"Error: fail to save window geometry to file: {CACHE_FILE_GEOMETRY}", file=sys.stderr)
 
 
-def modify_v(rgb: Tuple[int, int, int], v_add: float) -> Tuple[int, int, int]:
+def modify_hsv(rgb: Tuple[int, int, int], h_add: float = 0.0, s_add: float = 0.0, v_add: float = 0.0) -> Tuple[int, int, int]:
+    def clip01(v):
+        return max(0.0, min(1.0, v))
+
+    assert -1.0 <= h_add <= 1.0
+    assert -1.0 <= s_add <= 1.0
     assert -1.0 <= v_add <= 1.0
 
     r, g, b = rgb
-    assert 0 <= r < 255
-    assert 0 <= g < 255
-    assert 0 <= b < 255
+    assert 0 <= r <= 255
+    assert 0 <= g <= 255
+    assert 0 <= b <= 255
 
     rgb_01 = (r / 255, g / 255, b / 255)  # Normalize RGB to 0-1 range
-    hsv = colorsys.rgb_to_hsv(*rgb_01)
+    h, s, v = colorsys.rgb_to_hsv(*rgb_01)
 
-    new_v = hsv[2] + v_add
-    new_hsv = (hsv[0], hsv[1], max(0.0, min(1.0, new_v)))
+    new_hsv = ((h + h_add) % 1.0, clip01(s + s_add), clip01(v + v_add))
 
     new_rgb_01 = colorsys.hsv_to_rgb(*new_hsv)
     new_rgb = int(new_rgb_01[0] * 255), int(new_rgb_01[1] * 255), int(new_rgb_01[2] * 255)
@@ -633,13 +637,13 @@ class GUIColorConfig:
         self.BASE_COLOR_3 = (0x49, 0xb0, 0xd8)  # green
         self.ACCENT_COLOR_3 = (0xd9, 0xd4, 0x5d)
         self.PALETTE: Dict[int, Tuple[int, int, int]] = {
-            11: self.BASE_COLOR_1,
-            12: modify_v(self.BASE_COLOR_1, 0.1),
-            13: self.ACCENT_COLOR_1,
+            11: modify_hsv(self.BASE_COLOR_1, s_add=0.1),
+            12: modify_hsv(self.BASE_COLOR_1, s_add=0.1, v_add=0.1),
+            13: modify_hsv(self.ACCENT_COLOR_1, s_add=0.1),
 
-            21: modify_v(self.BASE_COLOR_2, -0.1),
-            22: self.BASE_COLOR_2,
-            23: self.ACCENT_COLOR_2,
+            21: modify_hsv(self.BASE_COLOR_2, s_add=0.1, v_add=-0.1),
+            22: modify_hsv(self.BASE_COLOR_2, s_add=0.1),
+            23: modify_hsv(self.ACCENT_COLOR_2, s_add=0.1),
         }
         if color_scheme == "default":
             self.PALETTE |= {
@@ -931,7 +935,7 @@ class AppPyQt(BaseApp, QMainWindow):
                 elif color_code == COLOR_BACKGROUND:
                     alpha = 128
                 else:
-                    alpha = 230
+                    alpha = 220
                 qcolor_cache[color_code] = QColor(*rgb, alpha)
             return qcolor_cache[color_code]
 
