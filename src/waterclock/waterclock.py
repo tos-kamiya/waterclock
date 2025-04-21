@@ -149,10 +149,15 @@ def save_window_geometry(x, y, width, height):
         print(f"Error: fail to save window geometry to file: {CACHE_FILE_GEOMETRY}", file=sys.stderr)
 
 
-def modify_hsv(rgb: Tuple[int, int, int], h: float = 0.0, s: float = 0.0, v: float = 0.0) -> Tuple[int, int, int]:
-    def clip01(v):
-        return max(0.0, min(1.0, v))
+def clip01(v):
+    return max(0.0, min(1.0, v))
 
+
+def clip255(v):
+    return max(0, min(255, int(v)))
+
+
+def modify_hsv(rgb: Tuple[int, int, int], h: float = 0.0, s: float = 0.0, v: float = 0.0) -> Tuple[int, int, int]:
     assert -1.0 <= h <= 1.0
     assert -1.0 <= s <= 1.0
     assert -1.0 <= v <= 1.0
@@ -163,12 +168,23 @@ def modify_hsv(rgb: Tuple[int, int, int], h: float = 0.0, s: float = 0.0, v: flo
     assert 0 <= b <= 255
 
     rgb_01 = (r / 255, g / 255, b / 255)  # Normalize RGB to 0-1 range
-    h, s, v = colorsys.rgb_to_hsv(*rgb_01)
+    h_value, s_value, v_value = colorsys.rgb_to_hsv(*rgb_01)
 
-    new_hsv = ((h + h) % 1.0, clip01(s + s), clip01(v + v))
+    new_hsv = ((h_value + h) % 1.0, clip01(s_value + s), clip01(v_value + v))
 
     new_rgb_01 = colorsys.hsv_to_rgb(*new_hsv)
-    new_rgb = int(new_rgb_01[0] * 255), int(new_rgb_01[1] * 255), int(new_rgb_01[2] * 255)
+    new_rgb = clip255(new_rgb_01[0] * 255), clip255(new_rgb_01[1] * 255), clip255(new_rgb_01[2] * 255)
+
+    return new_rgb
+
+
+def scale_rgb(rgb: Tuple[int, int, int], s: float=1.0) -> Tuple[int, int, int]:
+    r, g, b = rgb
+    assert 0 <= r <= 255
+    assert 0 <= g <= 255
+    assert 0 <= b <= 255
+
+    new_rgb = (clip255(r * s), clip255(g * s), clip255(b * s))
 
     return new_rgb
 
@@ -659,22 +675,23 @@ class GUIColorConfig:
         if color_scheme == "default":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),
-                COLOR_WALL: (0x20, 0x20, 0x20),
-                COLOR_COVER: (0x24, 0x24, 0x24),
+                COLOR_WALL: (0x14, 0x14, 0x14),
+                COLOR_COVER: (0x16, 0x16, 0x16),
             }
         elif color_scheme == "light":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x40, 0x40, 0x40),
+                COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),
                 COLOR_WALL: (0xF0, 0xF0, 0xF0),
-                COLOR_COVER: (0xEA, 0xEA, 0xEA),
+                COLOR_COVER: (0xEE, 0xEE, 0xEE),
             }
         elif color_scheme == "dark":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x40, 0x40, 0x40),
-                COLOR_WALL: (0x20, 0x20, 0x20),
-                COLOR_COVER: (0x22, 0x22, 0x22),
+                COLOR_BACKGROUND: (0x30, 0x30, 0x30),
+                COLOR_WALL: (0x14, 0x14, 0x14),
+                COLOR_COVER: (0x16, 0x16, 0x16),
             }
         self.LIQUID_COLOR_BASES: List[int] = [11, 21]
+        self.WALL_STRIPE_SCALE: float = 1.08
 
     def pick_liquid_color(self, frame_count: int, now: Optional[datetime] = None) -> int:
         if now is None:
@@ -737,7 +754,9 @@ class AppPygame(BaseApp):
                             if is_liquid_color(f[y][x]):
                                 c = f[y][x]
                 if c != COLOR_BACKGROUND:
-                    color: Tuple[int, int, int] = palette.get(c, (255, 255, 255))
+                    color: Tuple[int, int, int] = palette.get(c, (250, 250, 250))
+                    if c in [COLOR_WALL, COLOR_COVER] and y % 2 == 0:
+                        color = scale_rgb(color, s=self.color_config.WALL_STRIPE_SCALE)
                     clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
 
         final_scale: float = min(self.window_width / WIDTH, self.window_height / HEIGHT)
@@ -938,17 +957,20 @@ class AppPyQt(BaseApp, QMainWindow):
 
         qcolor_cache = {}
 
-        def get_color(color_code):
-            if color_code not in qcolor_cache:
+        def get_color(color_code, s=None):
+            qc = qcolor_cache.get((s, color_code), None)
+            if qc is None:
                 rgb = palette.get(color_code, (250, 250, 250))
+                if s is not None:
+                    rgb = scale_rgb(rgb, s=s)
                 if color_code in [COLOR_WALL, COLOR_COVER]:
                     alpha = 255
                 elif color_code == COLOR_BACKGROUND:
-                    alpha = 128
+                    alpha = 190
                 else:
                     alpha = 220
-                qcolor_cache[color_code] = QColor(*rgb, alpha)
-            return qcolor_cache[color_code]
+                qc = qcolor_cache[(s, color_code)] = QColor(*rgb, alpha)
+            return qc
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -970,9 +992,12 @@ class AppPyQt(BaseApp, QMainWindow):
                         for f in reversed(self.prevFields):
                             if is_liquid_color(f[y][x]):
                                 c = f[y][x]
-                                break
+                                break  # for f
                 if c != COLOR_BACKGROUND:
-                    color = get_color(c)
+                    if c in [COLOR_WALL, COLOR_COVER] and y % 2 == 0:
+                        color = get_color(c, s=self.color_config.WALL_STRIPE_SCALE)
+                    else:
+                        color = get_color(c)
                     img.setPixelColor(x, y, color)
 
         scale = min(self.width() / WIDTH, self.height() / HEIGHT)
