@@ -665,8 +665,8 @@ class GUIColorConfig:
         self.BASE_COLOR_3 = (0x49, 0xB0, 0xD8)  # green
         self.ACCENT_COLOR_3 = (0xD9, 0xD4, 0x5D)
         self.PALETTE: Dict[int, Tuple[int, int, int]] = {
-            11: modify_hsv(self.BASE_COLOR_1, s=0.1),
-            12: modify_hsv(self.BASE_COLOR_1, s=0.1, v=0.1),
+            11: modify_hsv(self.BASE_COLOR_1, s=0.1, v=0.1),
+            12: modify_hsv(self.BASE_COLOR_1, s=0.1, v=0.2),
             13: modify_hsv(self.ACCENT_COLOR_1, s=0.1),
             21: modify_hsv(self.BASE_COLOR_2, s=0.1, v=-0.1),
             22: modify_hsv(self.BASE_COLOR_2, s=0.1),
@@ -674,19 +674,22 @@ class GUIColorConfig:
         }
         if color_scheme == "default":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),
-                COLOR_WALL: (0x14, 0x14, 0x14),
-                COLOR_COVER: (0x16, 0x16, 0x16),
+                COLOR_BACKGROUND: (0x40, 0x40, 0x40),
+                COLOR_WALL: (0xF5, 0xD1, 0xA9),
+                COLOR_COVER: (0xF7, 0xD3, 0xAB),
+                # COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),
+                # COLOR_WALL: (0x14, 0x14, 0x14),
+                # COLOR_COVER: (0x16, 0x16, 0x16),
             }
         elif color_scheme == "light":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),
+                COLOR_BACKGROUND: (0x70, 0x70, 0x70),
                 COLOR_WALL: (0xF0, 0xF0, 0xF0),
                 COLOR_COVER: (0xEE, 0xEE, 0xEE),
             }
         elif color_scheme == "dark":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x30, 0x30, 0x30),
+                COLOR_BACKGROUND: (0x40, 0x40, 0x40),
                 COLOR_WALL: (0x14, 0x14, 0x14),
                 COLOR_COVER: (0x16, 0x16, 0x16),
             }
@@ -966,7 +969,7 @@ class AppPyQt(BaseApp, QMainWindow):
                 if color_code in [COLOR_WALL, COLOR_COVER]:
                     alpha = 255
                 elif color_code == COLOR_BACKGROUND:
-                    alpha = 190
+                    alpha = 170
                 else:
                     alpha = 220
                 qc = qcolor_cache[(s, color_code)] = QColor(*rgb, alpha)
