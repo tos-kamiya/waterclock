@@ -64,10 +64,11 @@ DIGIT_BITMAPS: List[List[List[int]]] = [
     [[int(n) for n in ss] for ss in s.strip().split("\n")] for s in DIGIT_BITMAP_STRINGS
 ]
 
+
 # --- Utility Functions ---
 def find_icon_file(filename):
     base_dirs = []
-    pkg_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
+    pkg_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "data"))
     base_dirs.append(pkg_data_dir)
     try:
         pyinstaller_data_dir = sys._MEIPASS
@@ -112,7 +113,10 @@ Categories=Utility;
         with open(dest_file, "w") as f:
             f.write(desktop_file_content)
         print(f".desktop file generated at {dest_file}", file=sys.stderr)
-        print("To integrate with your system, copy this file to ~/.local/share/applications/ or ~/.config/autostart/", file=sys.stderr)
+        print(
+            "To integrate with your system, copy this file to ~/.local/share/applications/ or ~/.config/autostart/",
+            file=sys.stderr,
+        )
         print("For example:", file=sys.stderr)
         print("  cp waterclock.desktop ~/.local/share/applications/", file=sys.stderr)
     except Exception as e:
@@ -145,13 +149,13 @@ def save_window_geometry(x, y, width, height):
         print(f"Error: fail to save window geometry to file: {CACHE_FILE_GEOMETRY}", file=sys.stderr)
 
 
-def modify_hsv(rgb: Tuple[int, int, int], h_add: float = 0.0, s_add: float = 0.0, v_add: float = 0.0) -> Tuple[int, int, int]:
+def modify_hsv(rgb: Tuple[int, int, int], h: float = 0.0, s: float = 0.0, v: float = 0.0) -> Tuple[int, int, int]:
     def clip01(v):
         return max(0.0, min(1.0, v))
 
-    assert -1.0 <= h_add <= 1.0
-    assert -1.0 <= s_add <= 1.0
-    assert -1.0 <= v_add <= 1.0
+    assert -1.0 <= h <= 1.0
+    assert -1.0 <= s <= 1.0
+    assert -1.0 <= v <= 1.0
 
     r, g, b = rgb
     assert 0 <= r <= 255
@@ -161,7 +165,7 @@ def modify_hsv(rgb: Tuple[int, int, int], h_add: float = 0.0, s_add: float = 0.0
     rgb_01 = (r / 255, g / 255, b / 255)  # Normalize RGB to 0-1 range
     h, s, v = colorsys.rgb_to_hsv(*rgb_01)
 
-    new_hsv = ((h + h_add) % 1.0, clip01(s + s_add), clip01(v + v_add))
+    new_hsv = ((h + h) % 1.0, clip01(s + s), clip01(v + v))
 
     new_rgb_01 = colorsys.hsv_to_rgb(*new_hsv)
     new_rgb = int(new_rgb_01[0] * 255), int(new_rgb_01[1] * 255), int(new_rgb_01[2] * 255)
@@ -235,7 +239,10 @@ def put_sinkhole(field: List[List[int]], pos: int) -> None:
         field: The simulation field.
         pos: The digit position (0-3) to update.
     """
-    xs = [(pos * 4 + 1) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2, (pos * 4 + 3) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2]
+    xs = [
+        (pos * 4 + 1) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2,
+        (pos * 4 + 3) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2,
+    ]
     for y in range(6 * DIGIT_PIXEL_SIZE, 7 * DIGIT_PIXEL_SIZE):
         for x in xs:
             if field[y][x] == COLOR_WALL:
@@ -243,7 +250,10 @@ def put_sinkhole(field: List[List[int]], pos: int) -> None:
 
 
 def remove_sinkhole(field: List[List[int]], pos: int) -> None:
-    xs = [(pos * 4 + 1) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2, (pos * 4 + 3) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2]
+    xs = [
+        (pos * 4 + 1) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2,
+        (pos * 4 + 3) * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE - 2,
+    ]
     for y in range(6 * DIGIT_PIXEL_SIZE, 7 * DIGIT_PIXEL_SIZE):
         for x in xs:
             field[y][x] = COLOR_WALL
@@ -451,7 +461,9 @@ class BaseApp:
                 for dx in range(3):
                     if db[dy][dx] == 1:
                         for y in range((1 + dy) * DIGIT_PIXEL_SIZE, (1 + dy + 1) * DIGIT_PIXEL_SIZE):
-                            for x in range((1 + pos * 4 + dx) * DIGIT_PIXEL_SIZE, (1 + pos * 4 + dx + 1) * DIGIT_PIXEL_SIZE):
+                            for x in range(
+                                (1 + pos * 4 + dx) * DIGIT_PIXEL_SIZE, (1 + pos * 4 + dx + 1) * DIGIT_PIXEL_SIZE
+                            ):
                                 cover[y][x] = COLOR_COVER
 
     def update_terrain(self, now: datetime) -> None:
@@ -570,7 +582,7 @@ class BaseApp:
         field = self.field
 
         x, y = cursor_pos
-        if not(0 <= x < WIDTH and 0 <= y < HEIGHT):
+        if not (0 <= x < WIDTH and 0 <= y < HEIGHT):
             return
         if not is_liquid_color(field[y][x]):
             return
@@ -630,20 +642,19 @@ class BaseApp:
 
 class GUIColorConfig:
     def __init__(self, color_scheme: str = "default"):
-        self.BASE_COLOR_1 = (0x4a, 0xac, 0xda)  # blue
-        self.ACCENT_COLOR_1 = (0xd9, 0xd4, 0x5d)
-        self.BASE_COLOR_2 = (0xe0, 0x34, 0x4a)  # red
-        self.ACCENT_COLOR_2 = (0xd9, 0xd4, 0x5d)
-        self.BASE_COLOR_3 = (0x49, 0xb0, 0xd8)  # green
-        self.ACCENT_COLOR_3 = (0xd9, 0xd4, 0x5d)
+        self.BASE_COLOR_1 = (0x4A, 0xAC, 0xDA)  # blue
+        self.ACCENT_COLOR_1 = (0xD9, 0xD4, 0x5D)
+        self.BASE_COLOR_2 = (0xE0, 0x34, 0x4A)  # red
+        self.ACCENT_COLOR_2 = (0xD9, 0xD4, 0x5D)
+        self.BASE_COLOR_3 = (0x49, 0xB0, 0xD8)  # green
+        self.ACCENT_COLOR_3 = (0xD9, 0xD4, 0x5D)
         self.PALETTE: Dict[int, Tuple[int, int, int]] = {
-            11: modify_hsv(self.BASE_COLOR_1, s_add=0.1),
-            12: modify_hsv(self.BASE_COLOR_1, s_add=0.1, v_add=0.1),
-            13: modify_hsv(self.ACCENT_COLOR_1, s_add=0.1),
-
-            21: modify_hsv(self.BASE_COLOR_2, s_add=0.1, v_add=-0.1),
-            22: modify_hsv(self.BASE_COLOR_2, s_add=0.1),
-            23: modify_hsv(self.ACCENT_COLOR_2, s_add=0.1),
+            11: modify_hsv(self.BASE_COLOR_1, s=0.1),
+            12: modify_hsv(self.BASE_COLOR_1, s=0.1, v=0.1),
+            13: modify_hsv(self.ACCENT_COLOR_1, s=0.1),
+            21: modify_hsv(self.BASE_COLOR_2, s=0.1, v=-0.1),
+            22: modify_hsv(self.BASE_COLOR_2, s=0.1),
+            23: modify_hsv(self.ACCENT_COLOR_2, s=0.1),
         }
         if color_scheme == "default":
             self.PALETTE |= {
@@ -654,8 +665,8 @@ class GUIColorConfig:
         elif color_scheme == "light":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x40, 0x40, 0x40),
-                COLOR_WALL: (0xf0, 0xf0, 0xf0),
-                COLOR_COVER: (0xea, 0xea, 0xea),
+                COLOR_WALL: (0xF0, 0xF0, 0xF0),
+                COLOR_COVER: (0xEA, 0xEA, 0xEA),
             }
         elif color_scheme == "dark":
             self.PALETTE |= {
@@ -943,10 +954,7 @@ class AppPyQt(BaseApp, QMainWindow):
         painter.setRenderHint(QPainter.Antialiasing)
 
         path = QPainterPath()
-        path.addRoundedRect(
-            QRectF(0, 0, self.width(), self.height()),
-            self._corner_radius, self._corner_radius
-        )
+        path.addRoundedRect(QRectF(0, 0, self.width(), self.height()), self._corner_radius, self._corner_radius)
         painter.setClipPath(path)
 
         img = QImage(WIDTH, HEIGHT, QImage.Format_ARGB32)
@@ -1004,11 +1012,9 @@ class AppCurses(BaseApp):
         # Simple color mapping (simulation color -> curses color)
         self.color_map: Dict[int, Tuple[int, int]] = {
             COLOR_BACKGROUND: (curses_module.COLOR_WHITE, curses_module.COLOR_WHITE),
-
             8: (curses_module.COLOR_CYAN, curses_module.COLOR_CYAN),
             9: (curses_module.COLOR_BLUE, curses_module.COLOR_BLUE),
             10: (curses_module.COLOR_RED, curses_module.COLOR_RED),
-
             COLOR_WALL: (curses_module.COLOR_BLACK, curses_module.COLOR_BLACK),
             COLOR_COVER: (curses_module.COLOR_BLACK, curses_module.COLOR_BLACK),
         }
@@ -1084,7 +1090,7 @@ class AppCurses(BaseApp):
             self.draw()
 
             frame_count += 1
-            wait_until = start_time + frame_count / FRAME_RATE # sec
+            wait_until = start_time + frame_count / FRAME_RATE  # sec
             t = time.time()
             if t < wait_until:
                 time.sleep(wait_until - t)
@@ -1121,15 +1127,18 @@ def main() -> None:
         type=str,
         choices=["default", "dark", "light"],
         default="default",
-        help="Color theme (choose from 'default', 'dark', or 'light')."
+        help="Color theme (choose from 'default', 'dark', or 'light').",
     )
     parser.add_argument(
         "-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)."
     )
     parser.add_argument("--add-hours", type=int, default=0, help="Modify start time.")
-    parser.add_argument("-g", "--load-geometry", action="store_true", help="Restore window position and size on startup.")
-    parser.add_argument("--generate-desktop", action="store_true",
-                        help="Generate a .desktop file in the current directory")
+    parser.add_argument(
+        "-g", "--load-geometry", action="store_true", help="Restore window position and size on startup."
+    )
+    parser.add_argument(
+        "--generate-desktop", action="store_true", help="Generate a .desktop file in the current directory"
+    )
     parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
 
     args = parser.parse_args()
