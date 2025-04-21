@@ -660,8 +660,8 @@ class GUIColorConfig:
         elif color_scheme == "dark":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x40, 0x40, 0x40),
-                COLOR_WALL: (0x10, 0x10, 0x10),
-                COLOR_COVER: (0x12, 0x12, 0x12),
+                COLOR_WALL: (0x20, 0x20, 0x20),
+                COLOR_COVER: (0x22, 0x22, 0x22),
             }
         self.LIQUID_COLOR_BASES: List[int] = [11, 21]
 
