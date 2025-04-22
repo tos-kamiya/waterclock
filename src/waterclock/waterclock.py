@@ -674,27 +674,25 @@ class GUIColorConfig:
         }
         if color_scheme == "default":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x40, 0x40, 0x40),
+                COLOR_BACKGROUND: (0x58, 0x58, 0x58),
                 COLOR_WALL: (0xF5, 0xD1, 0xA9),
                 COLOR_COVER: (0xF7, 0xD3, 0xAB),
-                # COLOR_BACKGROUND: (0xC0, 0xC0, 0xC0),
-                # COLOR_WALL: (0x14, 0x14, 0x14),
-                # COLOR_COVER: (0x16, 0x16, 0x16),
             }
         elif color_scheme == "light":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x70, 0x70, 0x70),
+                COLOR_BACKGROUND: (0x74, 0x74, 0x74),
                 COLOR_WALL: (0xF0, 0xF0, 0xF0),
                 COLOR_COVER: (0xEE, 0xEE, 0xEE),
             }
         elif color_scheme == "dark":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x40, 0x40, 0x40),
+                COLOR_BACKGROUND: (0x50, 0x50, 0x50),
                 COLOR_WALL: (0x14, 0x14, 0x14),
                 COLOR_COVER: (0x16, 0x16, 0x16),
             }
         self.LIQUID_COLOR_BASES: List[int] = [11, 21]
-        self.WALL_STRIPE_SCALE: float = 1.08
+        self.WALL_STRIPE_SCALE: float = 1.1
+        self.SHADOW_SCALE: float = 0.65
 
     def pick_liquid_color(self, frame_count: int, now: Optional[datetime] = None) -> int:
         if now is None:
@@ -746,7 +744,8 @@ class AppPygame(BaseApp):
         """Draw the current simulation field using Pygame."""
         palette = self.color_config.PALETTE
         clock_surface = pygame.Surface((WIDTH, HEIGHT))
-        clock_surface.fill(palette[COLOR_BACKGROUND])
+        col_bak = palette[COLOR_BACKGROUND]
+        clock_surface.fill(col_bak)
         for y in range(HEIGHT):
             for x in range(WIDTH):
                 c: int = self.cover[y][x]
@@ -756,7 +755,12 @@ class AppPygame(BaseApp):
                         for f in self.prevFields[::-1]:
                             if is_liquid_color(f[y][x]):
                                 c = f[y][x]
-                if c != COLOR_BACKGROUND:
+                if c == COLOR_BACKGROUND:
+                    if x - 1 >= 0 and y - 1 >= 0:
+                        if self.field[y - 1][x - 1] != COLOR_BACKGROUND or self.cover[y - 1][x - 1]:
+                            color = scale_rgb(col_bak, s=self.color_config.SHADOW_SCALE)
+                            clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
+                else:
                     color: Tuple[int, int, int] = palette.get(c, (250, 250, 250))
                     if c in [COLOR_WALL, COLOR_COVER] and y % 2 == 0:
                         color = scale_rgb(color, s=self.color_config.WALL_STRIPE_SCALE)
@@ -996,7 +1000,12 @@ class AppPyQt(BaseApp, QMainWindow):
                             if is_liquid_color(f[y][x]):
                                 c = f[y][x]
                                 break  # for f
-                if c != COLOR_BACKGROUND:
+                if c == COLOR_BACKGROUND:
+                    if x - 1 >= 0 and y - 1 >= 0:
+                        if self.field[y - 1][x - 1] != COLOR_BACKGROUND or self.cover[y - 1][x - 1]:
+                            color = get_color(COLOR_BACKGROUND, s=self.color_config.SHADOW_SCALE)
+                            img.setPixelColor(x, y, color)
+                else:
                     if c in [COLOR_WALL, COLOR_COVER] and y % 2 == 0:
                         color = get_color(c, s=self.color_config.WALL_STRIPE_SCALE)
                     else:
