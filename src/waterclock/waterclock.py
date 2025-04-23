@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pygame
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QSizeGrip
-from PyQt5.QtGui import QPainter, QImage, QColor, QIcon, QPainterPath
+from PyQt5.QtGui import QPainter, QImage, QColor, QIcon, QPainterPath, QPen
 from PyQt5.QtCore import QTimer, Qt, QRectF
 from appdirs import user_cache_dir
 
@@ -682,23 +682,23 @@ class GUIColorConfig:
         if color_scheme == "default":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x58, 0x58, 0x58),
-                COLOR_WALL: modify_hsv((0xF5, 0xD1, 0xA9), v=0.05),
-                COLOR_COVER: modify_hsv((0xF5, 0xD1, 0xA9), v=0.01),
+                COLOR_WALL: (0xF6, 0xD7, 0xAF),
+                COLOR_COVER: modify_hsv((0xF6, 0xD7, 0xAF), v=0.035),
             }
         elif color_scheme == "light":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x74, 0x74, 0x74),
                 COLOR_WALL: (0xF0, 0xF0, 0xF0),
-                COLOR_COVER: modify_hsv((0xF0, 0xF0, 0xF0), v=-0.04),
+                COLOR_COVER: modify_hsv((0xF0, 0xF0, 0xF0), v=-0.035),
             }
         elif color_scheme == "dark":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x50, 0x50, 0x50),
                 COLOR_WALL: (0x14, 0x14, 0x14),
-                COLOR_COVER: modify_hsv((0x14, 0x14, 0x14), v=0.015),
+                COLOR_COVER: modify_hsv((0x14, 0x14, 0x14), v=0.013),
             }
         self.LIQUID_COLOR_BASES: List[int] = [11, 21]
-        self.WALL_STRIPE_SCALE: float = 1.1
+        self.WALL_STRIPE_SCALE: float = 1.07
         self.SHADOW_SCALE: float = 0.72
 
     def pick_liquid_color(self, frame_count: int, now: Optional[datetime] = None) -> int:
@@ -922,7 +922,10 @@ class AppPyQt(BaseApp, QMainWindow):
 
         self.setWindowTitle("Water Clock v" + __version__)
 
-        self.setWindowFlags(Qt.FramelessWindowHint | (Qt.Tool if self._taskbar_icon else 0))
+        if self._taskbar_icon:
+            self.setWindowFlags(Qt.FramelessWindowHint)
+        else:
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
     def closeEvent(self, event):
@@ -1005,6 +1008,9 @@ class AppPyQt(BaseApp, QMainWindow):
         path = QPainterPath()
         path.addRoundedRect(QRectF(0, 0, self.width(), self.height()), self._corner_radius, self._corner_radius)
         painter.setClipPath(path)
+
+        painter.setPen(QPen(get_color(COLOR_WALL), 1.2))
+        painter.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), self._corner_radius, self._corner_radius)
 
         img = QImage(WIDTH, HEIGHT, QImage.Format_ARGB32)
 
@@ -1193,6 +1199,12 @@ def main() -> None:
         help="Color theme (choose from 'default', 'dark', or 'light').",
     )
     parser.add_argument(
+        "--no-taskbar-icon",
+        action="store_false",
+        dest="_taskbar_icon",
+        help="Do not show the application in the taskbar (only for PyQt5).",
+    )
+    parser.add_argument(
         "-a", "--acceleration", type=int, default=1, help="Acceleration factor for simulation time (default: 1)."
     )
     parser.add_argument("--add-hours", type=int, default=0, help="Modify start time.")
@@ -1213,7 +1225,9 @@ def main() -> None:
 
     if args.pygame or args.curses:
         if args.load_geometry:
-            parser.error("--load-geometry is invalid when either --pygame or --curses is specified")
+            parser.error("--load-geometry is invalid when either --pygame or --curses is specified (only for PyQt5)")
+        if args._taskbar_icon is False:
+            parser.error("--no-taskbar-icon is invalid when either --pygame or --curses is specified (only for PyQt5)")
 
     if args.generate_desktop:
         generate_desktop_file(theme=args.theme, load_geometry=args.load_geometry)
@@ -1234,7 +1248,7 @@ def main() -> None:
         if icon_path is not None:
             app.setWindowIcon(QIcon(icon_path))
 
-        window = AppPyQt(theme=args.theme, load_geometry=args.load_geometry)
+        window = AppPyQt(theme=args.theme, load_geometry=args.load_geometry, taskbar_icon=args._taskbar_icon)
         window.show()
         sys.exit(app.exec_())
 
