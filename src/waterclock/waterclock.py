@@ -178,9 +178,7 @@ def modify_hsv(rgb: Tuple[int, int, int], h: float = 0.0, s: float = 0.0, v: flo
 
 
 def interpolate_rgb(
-    color1: Tuple[int, int, int],
-    color2: Optional[Tuple[int, int, int]] = None,
-    ratio: float = 1.0
+    color1: Tuple[int, int, int], color2: Optional[Tuple[int, int, int]] = None, ratio: float = 1.0
 ) -> Tuple[int, int, int]:
     if color2 is None:
         color2 = (0, 0, 0)
@@ -1064,24 +1062,18 @@ class AppPyQt(BaseApp, QMainWindow):
 # --- Curses Version Class ---
 class AppCurses(BaseApp):
     LIQUID_COLOR_BASE = 8
+    BLOCK_CHAR = "\U0001FB84"  # Legacy Symbols for Legacy Computing
 
     def __init__(self, curses_module, stdscr) -> None:
-        """Initialize the curses-based simulation.
-
-        Args:
-            curses_module: The curses module.
-            stdscr: The curses standard screen.
-        """
         super().__init__()
         self.curses = curses_module
         self.stdscr = stdscr
         curses_module.curs_set(0)
         self.stdscr.nodelay(True)
         self.stdscr.timeout(0)
-        curses_module.mousemask(0)  # Disable mouse processing
+        curses_module.mousemask(0)
         curses_module.start_color()
 
-        # Simple color mapping (simulation color -> curses color)
         self.color_map: Dict[int, Tuple[int, int]] = {
             COLOR_BACKGROUND: (curses_module.COLOR_WHITE, curses_module.COLOR_WHITE),
             8: (curses_module.COLOR_CYAN, curses_module.COLOR_CYAN),
@@ -1091,78 +1083,127 @@ class AppCurses(BaseApp):
             COLOR_COVER: (curses_module.COLOR_BLACK, curses_module.COLOR_BLACK),
         }
 
-        self.color_pairs: Dict[int, Any] = {}
-        pair_number: int = 1
+        # set up curses attrs for colors
+        self.color_pairs: Dict[int, int] = {}
+        pair_no = 1
         for sim_color, (fg, bg) in self.color_map.items():
             try:
-                curses_module.init_pair(pair_number, fg, bg)
+                curses_module.init_pair(pair_no, fg, bg)
             except curses_module.error:
-                curses_module.init_pair(pair_number, curses_module.COLOR_WHITE, curses_module.COLOR_BLACK)
-            self.color_pairs[sim_color] = curses_module.color_pair(pair_number)
-            pair_number += 1
+                curses_module.init_pair(pair_no, curses_module.COLOR_WHITE, curses_module.COLOR_BLACK)
+            self.color_pairs[sim_color] = curses_module.color_pair(pair_no)
+            pair_no += 1
+
+        # (top color, bottom color) -> curses attr
+        self.block_pairs: Dict[Tuple[int, int], int] = {}
+        self.next_pair_no = pair_no
+
         self.stdscr.clear()
 
-    def get_screen_offsets(self) -> Tuple[int, int, int]:
-        """Calculate the offsets for centering the simulation in the terminal.
-
-        Returns:
-            A tuple (offset_y, offset_x, horz_scale), where horz_scale is 2 if the terminal is wide enough,
-            otherwise 1.
-        """
+    def get_screen_offsets(self) -> Tuple[int, int, int, str]:
         max_y, max_x = self.stdscr.getmaxyx()
-        # If the width is sufficient, draw each simulation pixel as 2 characters wide.
-        horz_scale: int = 2 if max_x >= WIDTH * 2 else 1
-        offset_y: int = (max_y - HEIGHT) // 2 if max_y >= HEIGHT else 0
-        offset_x: int = (max_x - (WIDTH * horz_scale)) // 2 if max_x >= WIDTH * horz_scale else 0
-        return offset_y, offset_x, horz_scale
+
+        if max_x >= WIDTH * 2 and max_y >= HEIGHT:
+            mode = "horizontal"
+            horz_scale = 2
+            disp_height = HEIGHT
+        elif max_y >= HEIGHT and max_x >= WIDTH:
+            mode = "horizontal"
+            horz_scale = 1
+            disp_height = HEIGHT
+        else:
+            mode = "vertical"
+            horz_scale = 1
+            disp_height = (HEIGHT + 1) // 2
+
+        offset_y = (max_y - disp_height) // 2 if max_y >= disp_height else 0
+        offset_x = (max_x - WIDTH * horz_scale) // 2 if max_x >= WIDTH * horz_scale else 0
+        return offset_y, offset_x, horz_scale, mode
+
+    def _get_block_attr(self, top_color: int, bot_color: int) -> int:
+        key = (top_color, bot_color)
+        if key not in self.block_pairs:
+            fg = self.color_map[top_color][0]
+            bg = self.color_map[bot_color][1]
+            try:
+                self.curses.init_pair(self.next_pair_no, fg, bg)
+                self.block_pairs[key] = self.curses.color_pair(self.next_pair_no)
+                self.next_pair_no += 1
+            except self.curses.error:
+                self.block_pairs[key] = self.color_pairs.get(top_color, self.curses.A_NORMAL)
+        return self.block_pairs[key]
 
     def draw(self) -> None:
-        """Draw the simulation field using curses."""
-        curses = self.curses
         self.stdscr.erase()
-        offset_y, offset_x, horz_scale = self.get_screen_offsets()
-        for y in range(HEIGHT):
-            for x in range(WIDTH):
-                c: int = self.cover[y][x]
-                if c == 0:
-                    c = self.field[y][x]
+        offset_y, offset_x, horz_scale, mode = self.get_screen_offsets()
+
+        if mode == "horizontal":
+            for y in range(HEIGHT):
+                for x in range(WIDTH):
+                    c = self.cover[y][x] or self.field[y][x]
                     if c == COLOR_BACKGROUND:
                         for prev in reversed(self.prevFields):
                             if is_liquid_color(prev[y][x]):
                                 c = prev[y][x]
                                 break
-                attr = self.color_pairs.get(c, curses.A_NORMAL)
-                # Draw using "."; if horz_scale is 2, draw ".."
-                text: str = "." * horz_scale
-                try:
-                    self.stdscr.addstr(offset_y + y, offset_x + x * horz_scale, text, attr)
-                except curses.error:
-                    pass
+                    attr = self.color_pairs.get(c, self.curses.A_NORMAL)
+                    text = "." * horz_scale
+                    try:
+                        self.stdscr.addstr(offset_y + y, offset_x + x * horz_scale, text, attr)
+                    except self.curses.error:
+                        pass
+
+        else:  # mode == "vertical"
+            # two pixels are drawn as one character
+            for y in range(0, HEIGHT, 2):
+                screen_y = offset_y + (y // 2)
+                for x in range(WIDTH):
+                    # top pixel
+                    c_top = self.cover[y][x] or self.field[y][x]
+                    if c_top == COLOR_BACKGROUND:
+                        for prev in reversed(self.prevFields):
+                            if is_liquid_color(prev[y][x]):
+                                c_top = prev[y][x]
+                                break
+                    # bottom pixel
+                    if y + 1 < HEIGHT:
+                        c_bot = self.cover[y + 1][x] or self.field[y + 1][x]
+                        if c_bot == COLOR_BACKGROUND:
+                            for prev in reversed(self.prevFields):
+                                if is_liquid_color(prev[y + 1][x]):
+                                    c_bot = prev[y + 1][x]
+                                    break
+                    else:
+                        # the odd last line is filled by wall color
+                        c_bot = COLOR_WALL
+
+                    attr = self._get_block_attr(c_top, c_bot)
+                    text = self.BLOCK_CHAR * horz_scale
+                    try:
+                        self.stdscr.addstr(screen_y, offset_x + x * horz_scale, text, attr)
+                    except self.curses.error:
+                        pass
+
         self.stdscr.refresh()
 
     def run(self) -> None:
-        """Run the simulation using curses."""
         now: datetime = datetime.now()
         self.init_field(now)
-
-        start_time = time.time()  # sec
+        start_time = time.time()
         frame_count = 0
-
-        running: bool = True
+        running = True
         while running:
             try:
-                key: int = self.stdscr.getch()
+                key = self.stdscr.getch()
                 if key == ord("q"):
                     running = False
-                # Mouse events are ignored.
             except Exception:
                 pass
-            now: datetime = datetime.now()
+            now = datetime.now()
             self.update(now)
             self.draw()
-
             frame_count += 1
-            wait_until = start_time + frame_count / FRAME_RATE  # sec
+            wait_until = start_time + frame_count / FRAME_RATE
             t = time.time()
             if t < wait_until:
                 time.sleep(wait_until - t)
@@ -1172,10 +1213,8 @@ class AppCurses(BaseApp):
 
     def pick_liquid_color(self, now: Optional[datetime] = None) -> int:
         c = self.LIQUID_COLOR_BASE
-
         if now is None:
             return c
-
         if self.frameCount % 8000 == 3:
             c += 2
         elif self.frameCount % 100 >= 85:
@@ -1244,6 +1283,7 @@ def main() -> None:
         curses.wrapper(lambda stdscr: AppCurses(curses, stdscr).run())
     elif args.pygame:
         import pygame
+
         app = AppPygame(pygame, acceleration=args.acceleration, add_hours=args.add_hours, theme=args.theme)
         app.run()
     else:
