@@ -10,7 +10,6 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-import pygame
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QSizeGrip
 from PyQt5.QtGui import QPainter, QImage, QColor, QIcon, QPainterPath, QPen
 from PyQt5.QtCore import QTimer, Qt, QRectF
@@ -720,9 +719,11 @@ class GUIColorConfig:
 
 # --- Pygame Version Class ---
 class AppPygame(BaseApp):
-    def __init__(self, acceleration: int = 1, add_hours: int = 0, theme: str = "default") -> None:
+    def __init__(self, pygame_module, acceleration: int = 1, add_hours: int = 0, theme: str = "default") -> None:
         """Initialize the Pygame-based simulation."""
         super().__init__()
+
+        pygame = self.pygame = pygame_module
         self.acceleration = acceleration
         self.add_hours = add_hours
         self.color_config = GUIColorConfig(theme)
@@ -749,6 +750,7 @@ class AppPygame(BaseApp):
 
     def draw(self) -> None:
         """Draw the current simulation field using Pygame."""
+        pygame = self.pygame
         palette = self.color_config.PALETTE
         clock_surface = pygame.Surface((WIDTH, HEIGHT))
         col_bak = palette[COLOR_BACKGROUND]
@@ -815,6 +817,7 @@ class AppPygame(BaseApp):
         return (field_x, field_y)
 
     def run(self) -> None:
+        pygame = self.pygame
         now: datetime = datetime.now()
         if self.add_hours != 0:
             self.init_field(now + timedelta(hours=self.add_hours))
@@ -1240,7 +1243,8 @@ def main() -> None:
 
         curses.wrapper(lambda stdscr: AppCurses(curses, stdscr).run())
     elif args.pygame:
-        app = AppPygame(acceleration=args.acceleration, add_hours=args.add_hours, theme=args.theme)
+        import pygame
+        app = AppPygame(pygame, acceleration=args.acceleration, add_hours=args.add_hours, theme=args.theme)
         app.run()
     else:
         app = QApplication(sys.argv)
