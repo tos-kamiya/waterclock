@@ -43,3 +43,6 @@ By default, the application starts with a PyQt5-based GUI. The following command
 
 - `-g, --load-geometry`  
   Restore window position and size on startup (only valid with the default PyQt5 mode).
+
+- `--no-taskbar-icon`  
+  Hide taskbar icon (only valid with the default PyQt5 mode).
