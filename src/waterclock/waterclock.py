@@ -178,15 +178,22 @@ def modify_hsv(rgb: Tuple[int, int, int], h: float = 0.0, s: float = 0.0, v: flo
     return new_rgb
 
 
-def scale_rgb(rgb: Tuple[int, int, int], s: float=1.0) -> Tuple[int, int, int]:
-    r, g, b = rgb
-    assert 0 <= r <= 255
-    assert 0 <= g <= 255
-    assert 0 <= b <= 255
+def interpolate_rgb(
+    color1: Tuple[int, int, int],
+    color2: Optional[Tuple[int, int, int]] = None,
+    ratio: float = 1.0
+) -> Tuple[int, int, int]:
+    if color2 is None:
+        color2 = (0, 0, 0)
 
-    new_rgb = (clip255(r * s), clip255(g * s), clip255(b * s))
+    r1, g1, b1 = color1
+    r2, g2, b2 = color2
 
-    return new_rgb
+    r = clip255((1.0 - ratio) * r2 + ratio * r1)
+    g = clip255((1.0 - ratio) * g2 + ratio * g1)
+    b = clip255((1.0 - ratio) * b2 + ratio * b1)
+
+    return (r, g, b)
 
 
 def is_liquid_color(c: int) -> bool:
@@ -668,31 +675,31 @@ class GUIColorConfig:
             11: modify_hsv(self.BASE_COLOR_1, s=0.1, v=0.1),
             12: modify_hsv(self.BASE_COLOR_1, s=0.1, v=0.2),
             13: modify_hsv(self.ACCENT_COLOR_1, s=0.1),
-            21: modify_hsv(self.BASE_COLOR_2, s=0.1, v=-0.1),
-            22: modify_hsv(self.BASE_COLOR_2, s=0.1),
+            21: modify_hsv(self.BASE_COLOR_2, s=0.1),
+            22: modify_hsv(self.BASE_COLOR_2, s=0.1, v=0.1),
             23: modify_hsv(self.ACCENT_COLOR_2, s=0.1),
         }
         if color_scheme == "default":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x58, 0x58, 0x58),
-                COLOR_WALL: (0xF5, 0xD1, 0xA9),
-                COLOR_COVER: (0xF7, 0xD3, 0xAB),
+                COLOR_WALL: modify_hsv((0xF5, 0xD1, 0xA9), v=0.05),
+                COLOR_COVER: modify_hsv((0xF5, 0xD1, 0xA9), v=0.01),
             }
         elif color_scheme == "light":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x74, 0x74, 0x74),
                 COLOR_WALL: (0xF0, 0xF0, 0xF0),
-                COLOR_COVER: (0xEE, 0xEE, 0xEE),
+                COLOR_COVER: modify_hsv((0xF0, 0xF0, 0xF0), v=-0.04),
             }
         elif color_scheme == "dark":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x50, 0x50, 0x50),
                 COLOR_WALL: (0x14, 0x14, 0x14),
-                COLOR_COVER: (0x16, 0x16, 0x16),
+                COLOR_COVER: modify_hsv((0x14, 0x14, 0x14), v=0.015),
             }
         self.LIQUID_COLOR_BASES: List[int] = [11, 21]
         self.WALL_STRIPE_SCALE: float = 1.1
-        self.SHADOW_SCALE: float = 0.65
+        self.SHADOW_SCALE: float = 0.72
 
     def pick_liquid_color(self, frame_count: int, now: Optional[datetime] = None) -> int:
         if now is None:
@@ -755,15 +762,23 @@ class AppPygame(BaseApp):
                         for f in self.prevFields[::-1]:
                             if is_liquid_color(f[y][x]):
                                 c = f[y][x]
+                                break  # for f
                 if c == COLOR_BACKGROUND:
                     if x - 1 >= 0 and y - 1 >= 0:
-                        if self.field[y - 1][x - 1] != COLOR_BACKGROUND or self.cover[y - 1][x - 1]:
-                            color = scale_rgb(col_bak, s=self.color_config.SHADOW_SCALE)
+                        c1 = self.field[y - 1][x - 1]
+                        if c1 == COLOR_WALL or self.cover[y - 1][x - 1]:
+                            color = interpolate_rgb(col_bak, ratio=self.color_config.SHADOW_SCALE)
                             clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
+                        elif c1 != COLOR_BACKGROUND:
+                            col_1 = palette.get(c1, (250, 250, 250))
+                            color = interpolate_rgb(col_bak, col_1, ratio=self.color_config.SHADOW_SCALE)
+                            clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
+                        else:
+                            pass
                 else:
                     color: Tuple[int, int, int] = palette.get(c, (250, 250, 250))
                     if c in [COLOR_WALL, COLOR_COVER] and y % 2 == 0:
-                        color = scale_rgb(color, s=self.color_config.WALL_STRIPE_SCALE)
+                        color = interpolate_rgb(color, ratio=self.color_config.WALL_STRIPE_SCALE)
                     clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
 
         final_scale: float = min(self.window_width / WIDTH, self.window_height / HEIGHT)
@@ -868,12 +883,13 @@ class AppPygame(BaseApp):
 
 # --- PyQt5 version application class ---
 class AppPyQt(BaseApp, QMainWindow):
-    def __init__(self, theme: str = "default", load_geometry: bool = False):
+    def __init__(self, theme: str = "default", load_geometry: bool = False, taskbar_icon: bool = True) -> None:
         BaseApp.__init__(self)
         QMainWindow.__init__(self)
 
         self._resizing = False
         self._dragPos = None
+        self._taskbar_icon = taskbar_icon
         self.initUI()
 
         self.color_config = GUIColorConfig(theme)
@@ -906,7 +922,7 @@ class AppPyQt(BaseApp, QMainWindow):
 
         self.setWindowTitle("Water Clock v" + __version__)
 
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.FramelessWindowHint | (Qt.Tool if self._taskbar_icon else 0))
         self.setAttribute(Qt.WA_TranslucentBackground)
 
     def closeEvent(self, event):
@@ -964,19 +980,23 @@ class AppPyQt(BaseApp, QMainWindow):
 
         qcolor_cache = {}
 
-        def get_color(color_code, s=None):
-            qc = qcolor_cache.get((s, color_code), None)
+        def get_color(color_code_1, color_code_2=None, ratio=None):
+            qc = qcolor_cache.get((ratio, color_code_1, color_code_2), None)
             if qc is None:
-                rgb = palette.get(color_code, (250, 250, 250))
-                if s is not None:
-                    rgb = scale_rgb(rgb, s=s)
-                if color_code in [COLOR_WALL, COLOR_COVER]:
+                rgb = palette.get(color_code_1, (250, 250, 250))
+                if ratio is not None:
+                    if color_code_2 is not None:
+                        rgb2 = palette.get(color_code_2, (250, 250, 250))
+                        rgb = interpolate_rgb(rgb, rgb2, ratio=ratio)
+                    else:
+                        rgb = interpolate_rgb(rgb, ratio=ratio)
+                if color_code_1 in [COLOR_WALL, COLOR_COVER]:
                     alpha = 255
-                elif color_code == COLOR_BACKGROUND:
-                    alpha = 170
+                elif color_code_1 == COLOR_BACKGROUND:
+                    alpha = 180
                 else:
                     alpha = 220
-                qc = qcolor_cache[(s, color_code)] = QColor(*rgb, alpha)
+                qc = qcolor_cache[(ratio, color_code_1, color_code_2)] = QColor(*rgb, alpha)
             return qc
 
         painter = QPainter(self)
@@ -992,7 +1012,7 @@ class AppPyQt(BaseApp, QMainWindow):
 
         for y in range(HEIGHT):
             for x in range(WIDTH):
-                c = self.cover[y][x]
+                c: int = self.cover[y][x]
                 if c == 0:
                     c = self.field[y][x]
                     if c == COLOR_BACKGROUND:
@@ -1002,12 +1022,18 @@ class AppPyQt(BaseApp, QMainWindow):
                                 break  # for f
                 if c == COLOR_BACKGROUND:
                     if x - 1 >= 0 and y - 1 >= 0:
-                        if self.field[y - 1][x - 1] != COLOR_BACKGROUND or self.cover[y - 1][x - 1]:
-                            color = get_color(COLOR_BACKGROUND, s=self.color_config.SHADOW_SCALE)
+                        c1 = self.field[y - 1][x - 1]
+                        if c1 == COLOR_WALL or self.cover[y - 1][x - 1]:
+                            color = get_color(COLOR_BACKGROUND, ratio=self.color_config.SHADOW_SCALE)
                             img.setPixelColor(x, y, color)
+                        elif c1 != COLOR_BACKGROUND:
+                            color = get_color(COLOR_BACKGROUND, c1, ratio=self.color_config.SHADOW_SCALE)
+                            img.setPixelColor(x, y, color)
+                        else:
+                            pass
                 else:
                     if c in [COLOR_WALL, COLOR_COVER] and y % 2 == 0:
-                        color = get_color(c, s=self.color_config.WALL_STRIPE_SCALE)
+                        color = get_color(c, ratio=self.color_config.WALL_STRIPE_SCALE)
                     else:
                         color = get_color(c)
                     img.setPixelColor(x, y, color)
