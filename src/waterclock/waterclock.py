@@ -83,7 +83,7 @@ def find_icon_file(filename):
     return None
 
 
-def generate_desktop_file(theme="default", load_geometry=False):
+def generate_desktop_file(theme="default", load_geometry=False, no_taskbar_icon=False):
     if platform.system() != "Linux":
         sys.exit("Error: .desktop file is valid only on Linux system.")
 
@@ -93,9 +93,11 @@ def generate_desktop_file(theme="default", load_geometry=False):
 
     options = ""
     if theme:
-        options += f" --theme {theme}"
+        options += f"  --theme {theme}"
     if load_geometry:
-        options += " --load-geometry"
+        options += "  --load-geometry"
+    if no_taskbar_icon:
+        options += "  --no-taskbar-icon"
 
     desktop_file_content = f"""[Desktop Entry]
 Name=Water Clock
@@ -1272,7 +1274,7 @@ def main() -> None:
             parser.error("--no-taskbar-icon is invalid when either --pygame or --curses is specified (only for PyQt5)")
 
     if args.generate_desktop:
-        generate_desktop_file(theme=args.theme, load_geometry=args.load_geometry)
+        generate_desktop_file(theme=args.theme, load_geometry=args.load_geometry, no_taskbar_icon=not args._taskbar_icon)
         sys.exit(0)
 
     os.makedirs(CACHE_DIR, exist_ok=True)
