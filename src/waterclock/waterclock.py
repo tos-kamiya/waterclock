@@ -8,7 +8,7 @@ import random
 import shutil
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QSizeGrip
 from PyQt5.QtGui import QPainter, QImage, QColor, QIcon, QPainterPath, QPen
@@ -150,6 +150,10 @@ def save_window_geometry(x, y, width, height):
         print(f"Error: fail to save window geometry to file: {CACHE_FILE_GEOMETRY}", file=sys.stderr)
 
 
+RGBI = Tuple[int, int, int]
+RGBAI = Tuple[int, int, int, int]
+
+
 def clip01(v):
     return max(0.0, min(1.0, v))
 
@@ -158,15 +162,16 @@ def clip255(v):
     return max(0, min(255, int(v)))
 
 
-def modify_hsv(rgb: Tuple[int, int, int], h: float = 0.0, s: float = 0.0, v: float = 0.0) -> Tuple[int, int, int]:
+def modify_hsv(rgba: RGBAI, h: float = 0.0, s: float = 0.0, v: float = 0.0) -> RGBAI:
     assert -1.0 <= h <= 1.0
     assert -1.0 <= s <= 1.0
     assert -1.0 <= v <= 1.0
 
-    r, g, b = rgb
+    r, g, b, a = rgba
     assert 0 <= r <= 255
     assert 0 <= g <= 255
     assert 0 <= b <= 255
+    assert 0 <= a <= 255
 
     rgb_01 = (r / 255, g / 255, b / 255)  # Normalize RGB to 0-1 range
     h_value, s_value, v_value = colorsys.rgb_to_hsv(*rgb_01)
@@ -176,23 +181,23 @@ def modify_hsv(rgb: Tuple[int, int, int], h: float = 0.0, s: float = 0.0, v: flo
     new_rgb_01 = colorsys.hsv_to_rgb(*new_hsv)
     new_rgb = clip255(new_rgb_01[0] * 255), clip255(new_rgb_01[1] * 255), clip255(new_rgb_01[2] * 255)
 
-    return new_rgb
+    return (new_rgb[0], new_rgb[1], new_rgb[2], a)
 
 
 def interpolate_rgb(
-    color1: Tuple[int, int, int], color2: Optional[Tuple[int, int, int]] = None, ratio: float = 1.0
-) -> Tuple[int, int, int]:
+    rgba1: RGBAI, color2: Optional[RGBI] = None, ratio: float = 1.0
+) -> RGBAI:
     if color2 is None:
         color2 = (0, 0, 0)
 
-    r1, g1, b1 = color1
+    r1, g1, b1, a1 = rgba1
     r2, g2, b2 = color2
 
     r = clip255((1.0 - ratio) * r2 + ratio * r1)
     g = clip255((1.0 - ratio) * g2 + ratio * g1)
     b = clip255((1.0 - ratio) * b2 + ratio * b1)
 
-    return (r, g, b)
+    return (r, g, b, a1)
 
 
 def is_liquid_color(c: int) -> bool:
@@ -664,13 +669,13 @@ class BaseApp:
 
 class GUIColorConfig:
     def __init__(self, color_scheme: str = "default"):
-        self.BASE_COLOR_1 = (0x4A, 0xAC, 0xDA)  # blue
-        self.ACCENT_COLOR_1 = (0xD9, 0xD4, 0x5D)
-        self.BASE_COLOR_2 = (0xE0, 0x34, 0x4A)  # red
-        self.ACCENT_COLOR_2 = (0xD9, 0xD4, 0x5D)
-        self.BASE_COLOR_3 = (0x49, 0xB0, 0xD8)  # green
-        self.ACCENT_COLOR_3 = (0xD9, 0xD4, 0x5D)
-        self.PALETTE: Dict[int, Tuple[int, int, int]] = {
+        self.BASE_COLOR_1: RGBAI = (0x4A, 0xAC, 0xDA, 255)  # blue
+        self.ACCENT_COLOR_1: RGBAI = (0xD9, 0xD4, 0x5D, 255)
+        self.BASE_COLOR_2: RGBAI = (0xE0, 0x34, 0x4A, 255)  # red
+        self.ACCENT_COLOR_2: RGBAI = (0xD9, 0xD4, 0x5D, 255)
+        self.BASE_COLOR_3: RGBAI = (0x49, 0xB0, 0xD8, 255)  # green
+        self.ACCENT_COLOR_3: RGBAI = (0xD9, 0xD4, 0x5D, 255)
+        self.PALETTE: Dict[int, RGBAI] = {
             11: modify_hsv(self.BASE_COLOR_1, s=0.1, v=0.1),
             12: modify_hsv(self.BASE_COLOR_1, s=0.1, v=0.2),
             13: modify_hsv(self.ACCENT_COLOR_1, s=0.1),
@@ -680,21 +685,21 @@ class GUIColorConfig:
         }
         if color_scheme == "default":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x58, 0x58, 0x58),
-                COLOR_WALL: (0xF6, 0xD7, 0xAF),
-                COLOR_COVER: modify_hsv((0xF6, 0xD7, 0xAF), v=0.035),
+                COLOR_BACKGROUND: (0x58, 0x58, 0x58, 180),
+                COLOR_WALL: (0xF6, 0xD7, 0xAF, 255),
+                COLOR_COVER: modify_hsv((0xF6, 0xD7, 0xAF, 255), v=0.035),
             }
         elif color_scheme == "light":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x74, 0x74, 0x74),
-                COLOR_WALL: (0xF0, 0xF0, 0xF0),
-                COLOR_COVER: modify_hsv((0xF0, 0xF0, 0xF0), v=-0.035),
+                COLOR_BACKGROUND: (0x74, 0x74, 0x74, 180),
+                COLOR_WALL: (0xF0, 0xF0, 0xF0, 255),
+                COLOR_COVER: modify_hsv((0xF0, 0xF0, 0xF0, 255), v=-0.035),
             }
         elif color_scheme == "dark":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x50, 0x50, 0x50),
-                COLOR_WALL: (0x14, 0x14, 0x14),
-                COLOR_COVER: modify_hsv((0x14, 0x14, 0x14), v=0.013),
+                COLOR_BACKGROUND: (0x08, 0x07, 0x07, 225),
+                COLOR_WALL: (0x24, 0x24, 0x24, 255),
+                COLOR_COVER: modify_hsv((0x24, 0x24, 0x24, 255), v=0.015),
             }
         self.LIQUID_COLOR_BASES: List[int] = [11, 21]
         self.WALL_STRIPE_SCALE: float = 1.07
@@ -770,18 +775,18 @@ class AppPygame(BaseApp):
                         c1 = self.field[y - 1][x - 1]
                         if c1 == COLOR_WALL or self.cover[y - 1][x - 1]:
                             color = interpolate_rgb(col_bak, ratio=self.color_config.SHADOW_SCALE)
-                            clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
+                            clock_surface.fill(color[:3], pygame.Rect(x, y, 1, 1))
                         elif c1 != COLOR_BACKGROUND:
-                            col_1 = palette.get(c1, (250, 250, 250))
-                            color = interpolate_rgb(col_bak, col_1, ratio=self.color_config.SHADOW_SCALE)
-                            clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
+                            col_1 = palette.get(c1, (250, 250, 250, 255))
+                            color = interpolate_rgb(col_bak, col_1[:3], ratio=self.color_config.SHADOW_SCALE)
+                            clock_surface.fill(color[:3], pygame.Rect(x, y, 1, 1))
                         else:
                             pass
                 else:
-                    color: Tuple[int, int, int] = palette.get(c, (250, 250, 250))
+                    color: RGBAI = palette.get(c, (250, 250, 250, 255))
                     if c in [COLOR_WALL, COLOR_COVER] and y % 2 == 0:
                         color = interpolate_rgb(color, ratio=self.color_config.WALL_STRIPE_SCALE)
-                    clock_surface.fill(color, pygame.Rect(x, y, 1, 1))
+                    clock_surface.fill(color[:3], pygame.Rect(x, y, 1, 1))
 
         final_scale: float = min(self.window_width / WIDTH, self.window_height / HEIGHT)
         dest_width: int = int(WIDTH * final_scale)
@@ -982,27 +987,21 @@ class AppPyQt(BaseApp, QMainWindow):
         self.repaint()
 
     def paintEvent(self, event):
-        palette: Dict[int, Tuple[int, int, int]] = self.color_config.PALETTE
+        palette: Dict[int, RGBAI] = self.color_config.PALETTE
 
         qcolor_cache = {}
 
         def get_color(color_code_1, color_code_2=None, ratio=None):
             qc = qcolor_cache.get((ratio, color_code_1, color_code_2), None)
             if qc is None:
-                rgb = palette.get(color_code_1, (250, 250, 250))
+                rgb = palette.get(color_code_1, (250, 250, 250, 255))
                 if ratio is not None:
                     if color_code_2 is not None:
-                        rgb2 = palette.get(color_code_2, (250, 250, 250))
-                        rgb = interpolate_rgb(rgb, rgb2, ratio=ratio)
+                        rgb2 = palette.get(color_code_2, (250, 250, 250, 255))
+                        rgb = interpolate_rgb(rgb, rgb2[:3], ratio=ratio)
                     else:
                         rgb = interpolate_rgb(rgb, ratio=ratio)
-                if color_code_1 in [COLOR_WALL, COLOR_COVER]:
-                    alpha = 255
-                elif color_code_1 == COLOR_BACKGROUND:
-                    alpha = 180
-                else:
-                    alpha = 220
-                qc = qcolor_cache[(ratio, color_code_1, color_code_2)] = QColor(*rgb, alpha)
+                qc = qcolor_cache[(ratio, color_code_1, color_code_2)] = QColor(*rgb[:3], rgb[3])
             return qc
 
         painter = QPainter(self)
