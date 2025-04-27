@@ -4,11 +4,9 @@
 
 A digital water clock.
 
-![](waterclock-screenshot4.png)
+![](waterclock-screenshot5.png)
 
 This project simulates water droplets falling and moving inside containers shaped like digital clock digits.
-
-An online version is also available → [https://www.toshihirokamiya.com/waterclock/](https://www.toshihirokamiya.com/waterclock/)
 
 ## Installation
 
