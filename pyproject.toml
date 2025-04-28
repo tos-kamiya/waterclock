@@ -36,5 +36,8 @@ include = [
   "data/*.ico",
 ]
 
-[project.scripts]
+[project.gui-scripts]
 waterclock = "waterclock:main"
+
+[project.scripts]
+waterclock-cli = "waterclock:main"
