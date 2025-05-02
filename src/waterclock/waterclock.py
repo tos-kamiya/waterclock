@@ -936,9 +936,12 @@ class AppPyQt(BaseApp, QMainWindow):
             self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-    def closeEvent(self, event):
+    def save_window_state(self):
         geom = self.geometry()
         save_window_geometry(geom.x(), geom.y(), geom.width(), geom.height())
+
+    def closeEvent(self, event):
+        self.save_window_state()
         event.accept()
 
     def resizeEvent(self, event):
@@ -959,8 +962,14 @@ class AppPyQt(BaseApp, QMainWindow):
         self.resize(new_width, new_height)
         self._corner_radius = new_height / 20
 
+        self.save_window_state()
+
         self._resizing = False
         return super().resizeEvent(event)
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self.save_window_state()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
