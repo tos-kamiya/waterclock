@@ -8,9 +8,10 @@ import random
 import shutil
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Self, Tuple, Union
 
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QSizeGrip
+from PyQt5 import QtGui
 from PyQt5.QtGui import QPainter, QImage, QColor, QIcon, QPainterPath, QPen
 from PyQt5.QtCore import QTimer, Qt, QRectF
 from appdirs import user_cache_dir
@@ -65,7 +66,7 @@ DIGIT_BITMAPS: List[List[List[int]]] = [
 
 
 # --- Utility Functions ---
-def find_icon_file(filename):
+def find_icon_file(filename: str) -> str:
     base_dirs = []
     pkg_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "data"))
     base_dirs.append(pkg_data_dir)
@@ -140,7 +141,7 @@ def load_window_geometry():
         return None
 
 
-def save_window_geometry(x, y, width, height):
+def save_window_geometry(x: int, y: int, width: int, height: int) -> None:
     geometry = {"window_x": x, "window_y": y, "window_width": width, "window_height": height}
     try:
         with open(CACHE_FILE_GEOMETRY, "w") as f:
@@ -154,11 +155,11 @@ RGBI = Tuple[int, int, int]
 RGBAI = Tuple[int, int, int, int]
 
 
-def clip01(v):
+def clip01(v: float) -> float:
     return max(0.0, min(1.0, v))
 
 
-def clip255(v):
+def clip255(v: float) -> int:
     return max(0, min(255, int(v)))
 
 
@@ -204,7 +205,7 @@ def is_liquid_color(c: int) -> bool:
     return c != COLOR_BACKGROUND and c != COLOR_WALL
 
 
-def put_colon(field: List[List[int]], put_wall: bool):
+def put_colon(field: List[List[int]], put_wall: bool) -> None:
     COLON_X: int = 2 * 4 * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE // 2
     COLON_Y1: int = 2 * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE // 2
     COLON_Y2: int = 4 * DIGIT_PIXEL_SIZE + DIGIT_PIXEL_SIZE // 2
@@ -315,7 +316,7 @@ def put_digit(field: List[List[int]], pos: int, digit: int) -> None:
                         field[y][x] = COLOR_WALL
 
 
-def droplets_go_down(field: List[List[int]]):
+def droplets_go_down(field: List[List[int]]) -> None:
     """Simulate the downward movement of a droplet.
 
     If the cell below is empty, the droplet moves down. If the cell below
@@ -361,7 +362,7 @@ def droplet_swap(field: List[List[int]], x: int, y: int) -> bool:
     """
     vxvys = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
-    def count_same_droplets(x: int, y: int):
+    def count_same_droplets(x: int, y: int) -> int:
         c: int = field[y][x]
         same_liquids = 0
         for vx, vy in vxvys:
@@ -459,7 +460,7 @@ def pop_pick(pick_queue: List[int], pick_interval: int) -> int:
 
 # --- Base Simulation Class ---
 class BaseApp:
-    def __init__(self) -> None:
+    def __init__(self: Self) -> None:
         """Initialize the simulation state."""
         self.field: List[List[int]] = []
         self.prevFields: List[List[List[int]]] = []
@@ -470,7 +471,7 @@ class BaseApp:
         self.dropX: int = 0
         self.frameCount: int = 0
 
-    def init_field(self, now: datetime):
+    def init_field(self: Self, now: datetime) -> None:
         self.field: List[List[int]] = create_field(self.pick_liquid_color(now))
         h: int = now.hour
         m: int = now.minute
@@ -493,7 +494,7 @@ class BaseApp:
                             ):
                                 cover[y][x] = COLOR_COVER
 
-    def update_terrain(self, now: datetime) -> None:
+    def update_terrain(self: Self, now: datetime) -> None:
         """Update the simulation field.
 
         This includes updating the displayed digits, moving droplets,
@@ -531,7 +532,7 @@ class BaseApp:
     def pick_liquid_color(self, now: Optional[datetime] = None) -> int:
         raise NotImplementedError()
 
-    def update_droplets(self, now: datetime) -> None:
+    def update_droplets(self: Self, now: datetime) -> None:
         """Update the state of the droplets in the simulation.
 
         Args:
@@ -633,7 +634,7 @@ class BaseApp:
                     break  # for dx, dy
 
     def update(
-        self,
+        self: Self,
         now: Optional[datetime] = None,
         cursor_pos: Optional[Tuple[int, int]] = None,
         cursor_move: Optional[Tuple[int, int]] = None,
@@ -668,7 +669,7 @@ class BaseApp:
 
 
 class GUIColorConfig:
-    def __init__(self, color_scheme: str = "default"):
+    def __init__(self: Self, color_scheme: str = "default") -> None:
         self.BASE_COLOR_1: RGBAI = (0x4A, 0xAC, 0xDA, 255)  # blue
         self.ACCENT_COLOR_1: RGBAI = (0xD9, 0xD4, 0x5D, 255)
         self.BASE_COLOR_2: RGBAI = (0xE0, 0x34, 0x4A, 255)  # red
@@ -705,7 +706,7 @@ class GUIColorConfig:
         self.WALL_STRIPE_SCALE: float = 1.07
         self.SHADOW_SCALE: float = 0.72
 
-    def pick_liquid_color(self, frame_count: int, now: Optional[datetime] = None) -> int:
+    def pick_liquid_color(self: Self, frame_count: int, now: Optional[datetime] = None) -> int:
         if now is None:
             return self.LIQUID_COLOR_BASES[0]
 
@@ -891,7 +892,7 @@ class AppPygame(BaseApp):
 
 # --- PyQt5 version application class ---
 class AppPyQt(BaseApp, QMainWindow):
-    def __init__(self, theme: str = "default", load_geometry: bool = False, taskbar_icon: bool = True) -> None:
+    def __init__(self: Self, theme: str = "default", load_geometry: bool = False, taskbar_icon: bool = True) -> None:
         BaseApp.__init__(self)
         QMainWindow.__init__(self)
 
@@ -917,7 +918,7 @@ class AppPyQt(BaseApp, QMainWindow):
         self.timer.timeout.connect(self.simulation_step)
         self.timer.start(1000 // FRAME_RATE)
 
-    def initUI(self):
+    def initUI(self: Self) -> None:
         central = QWidget(self)
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -936,15 +937,15 @@ class AppPyQt(BaseApp, QMainWindow):
             self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-    def save_window_state(self):
+    def save_window_state(self: Self) -> None:
         geom = self.geometry()
         save_window_geometry(geom.x(), geom.y(), geom.width(), geom.height())
 
-    def closeEvent(self, event):
+    def closeEvent(self: Self, event: QtGui.QCloseEvent) -> None:
         self.save_window_state()
         event.accept()
 
-    def resizeEvent(self, event):
+    def resizeEvent(self: Self, event: QtGui.QResizeEvent) -> None:
         if self._resizing:
             return super().resizeEvent(event)
         self._resizing = True
@@ -967,11 +968,11 @@ class AppPyQt(BaseApp, QMainWindow):
         self._resizing = False
         return super().resizeEvent(event)
 
-    def moveEvent(self, event):
+    def moveEvent(self: Self, event: QtGui.QMoveEvent) -> None:
         super().moveEvent(event)
         self.save_window_state()
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self: Self, event: QtGui.QMouseEvent) -> None:
         if event.button() == Qt.LeftButton:
             self._dragPos = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
@@ -981,26 +982,26 @@ class AppPyQt(BaseApp, QMainWindow):
             self.move(event.globalPos() - self._dragPos)
             event.accept()
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self: Self, event: QtGui.QMouseEvent) -> None:
         self._dragPos = None
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self: Self, event: QtGui.QKeyEvent) -> None:
         if event.key() in (Qt.Key_Escape, Qt.Key_Q):
             self.close()
         else:
             super().keyPressEvent(event)
 
-    def simulation_step(self):
+    def simulation_step(self: Self) -> None:
         now = datetime.now()
         self.update(now)
         self.repaint()
 
-    def paintEvent(self, event):
+    def paintEvent(self: Self, event: QtGui.QPaintEvent) -> None:
         palette: Dict[int, RGBAI] = self.color_config.PALETTE
 
         qcolor_cache = {}
 
-        def get_color(color_code_1, color_code_2=None, ratio=None):
+        def get_color(color_code_1: int, color_code_2: Optional[int] = None, ratio: Optional[float] = None) -> QColor:
             qc = qcolor_cache.get((ratio, color_code_1, color_code_2), None)
             if qc is None:
                 rgb = palette.get(color_code_1, (250, 250, 250, 255))
@@ -1064,8 +1065,9 @@ class AppPyQt(BaseApp, QMainWindow):
         painter.scale(scale, scale)
         painter.drawImage(0, 0, img)
         painter.restore()
+        painter.end()
 
-    def pick_liquid_color(self, now: Optional[datetime] = None) -> int:
+    def pick_liquid_color(self: Self, now: Optional[datetime] = None) -> int:
         return self.color_config.pick_liquid_color(self.frameCount, now)
 
 
