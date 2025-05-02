@@ -2,4 +2,4 @@
 #
 # SPDX-License-Identifier: MIT
 
-from .waterclock import main
+from .waterclock import main, curses_main

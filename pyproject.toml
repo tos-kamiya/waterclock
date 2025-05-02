@@ -40,4 +40,4 @@ include = [
 waterclock = "waterclock:main"
 
 [project.scripts]
-waterclock-cli = "waterclock:main"
+waterclock-cli = "waterclock:curses_main"

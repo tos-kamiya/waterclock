@@ -1225,11 +1225,6 @@ class AppCurses(BaseApp):
 
 # --- Main Entry Point ---
 def main() -> None:
-    """Main entry point for the Water Clock simulation.
-
-    Use the --curses command-line option to run the curses version,
-    otherwise the Pygame version is started.
-    """
     parser = argparse.ArgumentParser(description="Water Clock Simulation")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--curses", action="store_true", help="Use curses for terminal rendering.")
@@ -1296,6 +1291,11 @@ def main() -> None:
         window = AppPyQt(theme=args.theme, load_geometry=args.load_geometry, taskbar_icon=args._taskbar_icon)
         window.show()
         sys.exit(app.exec_())
+
+
+def curses_main():
+    sys.argv.append("--curses")
+    main()
 
 
 if __name__ == "__main__":
