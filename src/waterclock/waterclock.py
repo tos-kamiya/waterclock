@@ -67,6 +67,14 @@ DIGIT_BITMAPS: List[List[List[int]]] = [
 
 # --- Utility Functions ---
 def find_icon_file(filename: str) -> str:
+    """Finds the path to an icon file.
+
+    Args:
+        filename (str): The name of the icon file to search for.
+
+    Returns:
+        str: The absolute path to the icon file if found, otherwise None.
+    """
     base_dirs = []
     pkg_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "data"))
     base_dirs.append(pkg_data_dir)
@@ -85,6 +93,16 @@ def find_icon_file(filename: str) -> str:
 
 
 def generate_desktop_file(theme="default", load_geometry=False, no_taskbar_icon=False):
+    """Generates a .desktop file for the application.
+
+    Args:
+        theme (str): The color theme to use (default is "default").
+        load_geometry (bool): Whether to load the window geometry on startup.
+        no_taskbar_icon (bool): Whether to hide the application from the taskbar.
+
+    Raises:
+        SystemExit: If the system is not Linux or if file generation fails.
+    """
     if platform.system() != "Linux":
         sys.exit("Error: .desktop file is valid only on Linux system.")
 
