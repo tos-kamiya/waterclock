@@ -920,6 +920,8 @@ class AppPyQt(BaseApp, QMainWindow):
         self.initUI()
 
         self.color_config = GUIColorConfig(theme)
+        self.qcolor_cache = {}
+        self.buffer_image = QImage(WIDTH, HEIGHT, QImage.Format_ARGB32)
 
         x, y = 100, 100
         width, height = WIDTH * 10, HEIGHT * 10
@@ -1015,9 +1017,10 @@ class AppPyQt(BaseApp, QMainWindow):
         self.repaint()
 
     def paintEvent(self: Self, event: QtGui.QPaintEvent) -> None:
-        palette: Dict[int, RGBAI] = self.color_config.PALETTE
+        qcolor_cache = self.qcolor_cache
+        img = self.buffer_image
 
-        qcolor_cache = {}
+        palette: Dict[int, RGBAI] = self.color_config.PALETTE
 
         def get_color(color_code_1: int, color_code_2: Optional[int] = None, ratio: Optional[float] = None) -> QColor:
             qc = qcolor_cache.get((ratio, color_code_1, color_code_2), None)
@@ -1041,8 +1044,6 @@ class AppPyQt(BaseApp, QMainWindow):
 
         painter.setPen(QPen(get_color(COLOR_WALL), 1.2))
         painter.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), self._corner_radius, self._corner_radius)
-
-        img = QImage(WIDTH, HEIGHT, QImage.Format_ARGB32)
 
         img.fill(get_color(COLOR_BACKGROUND))
 
