@@ -708,21 +708,33 @@ class GUIColorConfig:
                 COLOR_WALL: (0xF6, 0xD7, 0xAF, 255),
                 COLOR_COVER: modify_hsv((0xF6, 0xD7, 0xAF, 255), v=0.035),
             }
+            self.SHADOW_SCALE: float = 0.72
+            self.WALL_STRIPE_SCALE: float = 1.1
         elif color_scheme == "light":
             self.PALETTE |= {
                 COLOR_BACKGROUND: (0x74, 0x74, 0x74, 180),
                 COLOR_WALL: (0xF0, 0xF0, 0xF0, 255),
                 COLOR_COVER: modify_hsv((0xF0, 0xF0, 0xF0, 255), v=-0.035),
             }
+            self.SHADOW_SCALE: float = 0.72
+            self.WALL_STRIPE_SCALE: float = 1.05
         elif color_scheme == "dark":
             self.PALETTE |= {
-                COLOR_BACKGROUND: (0x08, 0x07, 0x07, 225),
-                COLOR_WALL: (0x24, 0x24, 0x24, 255),
-                COLOR_COVER: modify_hsv((0x24, 0x24, 0x24, 255), v=0.015),
+                COLOR_BACKGROUND: (0x09, 0x07, 0x07, 200),
+                COLOR_WALL: (0x20, 0x20, 0x20, 255),
+                COLOR_COVER: modify_hsv((0x20, 0x20, 0x20, 255), v=0.015),
             }
+            self.SHADOW_SCALE: float = 0.50
+            self.WALL_STRIPE_SCALE: float = 0.93
+        elif color_scheme == "transparent":
+            self.PALETTE |= {
+                COLOR_BACKGROUND: (0xe5, 0xe5, 0xe5, 50),
+                COLOR_WALL: (0xd5, 0xd5, 0xd5, 60),
+                COLOR_COVER: modify_hsv((0xd5, 0xd5, 0xd5, 60), v=0.015),
+            }
+            self.SHADOW_SCALE: float = 0.40
+            self.WALL_STRIPE_SCALE: float = 1.02
         self.LIQUID_COLOR_BASES: List[int] = [11, 21]
-        self.WALL_STRIPE_SCALE: float = 1.07
-        self.SHADOW_SCALE: float = 0.72
 
     def pick_liquid_color(self: Self, frame_count: int, now: Optional[datetime] = None) -> int:
         if now is None:
@@ -1262,9 +1274,9 @@ def main() -> None:
     parser.add_argument(
         "--theme",
         type=str,
-        choices=["default", "dark", "light"],
+        choices=["default", "dark", "light", "transparent"],
         default="default",
-        help="Color theme (choose from 'default', 'dark', or 'light').",
+        help="Color theme (choose from 'default', 'dark', 'light', or 'transparent').",
     )
     parser.add_argument(
         "--no-taskbar-icon",
